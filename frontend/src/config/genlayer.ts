@@ -39,7 +39,6 @@ export const GENLAYER_CHAIN_CONFIG = {
   blockExplorerUrls: [STUDIONET_EXPLORER],
 };
 
-// Default deployed contract address or retrieved from storage
 const STORAGE_KEY_CONTRACT = 'agentlease_contract_address';
 export const DEFAULT_CONTRACT_ADDRESS = '0xb38662B543D7B1B679B92d00c3132D9e8D455c3c';
 
@@ -57,6 +56,53 @@ export function getGenLayerClient() {
     chain: studionetChain,
     endpoint: STUDIONET_RPC,
   });
+}
+
+// Fetch live block height from Studionet
+export async function fetchCurrentBlockNumber(): Promise<number> {
+  try {
+    const res = await fetch(STUDIONET_RPC, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'eth_blockNumber',
+        params: [],
+      }),
+    });
+    const json = await res.json();
+    if (json.result) {
+      return parseInt(json.result, 16);
+    }
+  } catch (err) {
+    console.warn('Could not fetch block number:', err);
+  }
+  return 0;
+}
+
+// Fetch Contract Vault Balance in GEN
+export async function fetchContractBalance(): Promise<string> {
+  const contractAddress = getContractAddress();
+  try {
+    const res = await fetch(STUDIONET_RPC, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'eth_getBalance',
+        params: [contractAddress, 'latest'],
+      }),
+    });
+    const json = await res.json();
+    if (json.result) {
+      return BigInt(json.result).toString();
+    }
+  } catch (err) {
+    console.warn('Could not fetch contract balance:', err);
+  }
+  return '0';
 }
 
 // MetaMask Network Switcher
@@ -102,7 +148,7 @@ export async function callContractView(methodName: string, args: any[] = []): Pr
     });
     return result;
   } catch (sdkError) {
-    console.warn(`[SDK fallback] readContract failed for ${methodName}:`, sdkError);
+    console.warn(`[SDK fallback] readContract fallback for ${methodName}:`, sdkError);
     const response = await fetch(STUDIONET_RPC, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -115,7 +161,7 @@ export async function callContractView(methodName: string, args: any[] = []): Pr
     });
     const data = await response.json();
     if (data.error) {
-      throw new Error(data.error.message || 'Error executing view method');
+      throw new Error(data.error.message || 'Error executing on-chain view method');
     }
     return data.result;
   }
@@ -129,7 +175,7 @@ export async function executeContractWrite(
 ): Promise<string> {
   const ethereum = (window as any).ethereum;
   if (!ethereum) {
-    throw new Error('MetaMask is required to interact with AgentLease contracts.');
+    throw new Error('MetaMask is required to interact with AgentLease on GenLayer.');
   }
 
   await switchToStudioNet();
@@ -150,7 +196,7 @@ export async function executeContractWrite(
     });
     return txHash as string;
   } catch (err: any) {
-    console.warn(`[GenLayer-JS Write Fallback] Writing via provider directly:`, err);
+    console.warn(`[GenLayer-JS Write Fallback] Writing via direct provider:`, err);
     
     const txParams = {
       from: senderAddress,

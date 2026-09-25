@@ -4,9 +4,10 @@
 
 @layer base {
   body {
-    background-color: #0B131A;
-    color: #F1F5F9;
+    background-color: #04070D;
+    color: #F8FAFC;
     font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow-x: hidden;
   }
 
   code, pre, .font-mono {
@@ -14,28 +15,71 @@
   }
 }
 
-/* Custom scrollbars for telemetry readouts */
+/* Cybernetic Ambient Grid */
+.bg-quantum-grid {
+  background-size: 40px 40px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+}
+
+/* High-tech Glass Panel */
+.quantum-glass {
+  background: rgba(12, 20, 37, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(50, 75, 120, 0.5);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4), inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+}
+
+.quantum-glass:hover {
+  border-color: rgba(0, 240, 255, 0.4);
+  box-shadow: 0 12px 40px -4px rgba(0, 0, 0, 0.5), 0 0 20px -3px rgba(0, 240, 255, 0.15), inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+}
+
+/* High-tech Scanline Overlay */
+.scanline-overlay {
+  position: relative;
+  overflow: hidden;
+}
+
+.scanline-overlay::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0; height: 100%;
+  background: linear-gradient(
+    to bottom,
+    transparent 50%,
+    rgba(0, 240, 255, 0.015) 51%,
+    transparent 52%
+  );
+  background-size: 100% 4px;
+  pointer-events: none;
+}
+
+/* Custom Scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: #0B131A;
+  background: #04070D;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2A3B4D;
-  border-radius: 3px;
+  background: #223456;
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #38BDF8;
+  background: #00F0FF;
 }
 
-/* Pulse animation for active cluster computing */
-@keyframes cluster-pulse {
-  0%, 100% { opacity: 1; filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.6)); }
-  50% { opacity: 0.6; filter: drop-shadow(0 0 2px rgba(56, 189, 248, 0.2)); }
+/* Hologram pulse effect */
+@keyframes hologram-sweep {
+  0% { transform: translateY(-100%); opacity: 0; }
+  50% { opacity: 0.5; }
+  100% { transform: translateY(100%); opacity: 0; }
 }
 
-.animate-cluster {
-  animation: cluster-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+.animate-sweep {
+  animation: hologram-sweep 3s ease-in-out infinite;
 }

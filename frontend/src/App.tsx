@@ -5,10 +5,12 @@ import { LeaseCard } from './components/LeaseCard';
 import { CreateLease } from './components/CreateLease';
 import { SubmitProof } from './components/SubmitProof';
 import { DiagnosticInspectorModal } from './components/DiagnosticInspectorModal';
-import { Plus, Search, Server, Terminal } from 'lucide-react';
-import { LeaseOrderData, ClusterStats } from './utils/helpers';
+import { Plus, Search, Server, Terminal, Radio, Shield, Sparkles, AlertCircle } from 'lucide-react';
+import { LeaseOrderData, ClusterStats, shortenAddress } from './utils/helpers';
 import {
   callContractView,
+  fetchCurrentBlockNumber,
+  fetchContractBalance,
   switchToStudioNet,
   getContractAddress,
 } from './config/genlayer';
@@ -17,6 +19,8 @@ export const App: React.FC = () => {
   const [account, setAccount] = useState<string | null>(null);
   const [balance, setBalance] = useState<string>('0');
   const [chainId, setChainId] = useState<number | null>(null);
+  const [currentBlock, setCurrentBlock] = useState<number>(0);
+  const [contractVaultBal, setContractVaultBal] = useState<string>('0');
 
   const [stats, setStats] = useState<ClusterStats>({
     total_leases: 0,
@@ -26,68 +30,29 @@ export const App: React.FC = () => {
 
   const [leases, setLeases] = useState<LeaseOrderData[]>([]);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [activeTab, setActiveTab] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Modals state
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [proofLease, setProofLease] = useState<LeaseOrderData | null>(null);
   const [diagnosticLease, setDiagnosticLease] = useState<LeaseOrderData | null>(null);
 
-  // Fallback demo data to showcase HPC cluster if contract has 0 leases yet
-  const fallbackSampleLeases: LeaseOrderData[] = [
-    {
-      lease_id: 'lease-101',
-      renter: '0x32890Ac4B4Fa2bEb35b91C8AfD982F81c47E99A0',
-      host: '0x81b7e08f65bdf5648606c89998da2210b5034a24',
-      escrow_amount: '5000000000000000000',
-      hardware_spec: 'NVIDIA H100 80GB SXM5, min 80GB HBM3, >950 TFLOPS FP16 throughput, NVLink enabled',
-      benchmark_log_url: 'https://raw.githubusercontent.com/yeou/public-logs/main/h100_valid_benchmark.txt',
-      status: 2, // SETTLED_PAID
-      verdict: 'HARDWARE_VERIFIED',
-      reason: 'AI Jury verified NVIDIA H100 80GB SXM5. Device ID matches authentic vendor signatures, 81920 MiB VRAM confirmed, GEMM FP16 peak at 989.4 TFLOPS satisfies SLA criteria.',
-      confidence: 98,
-      performance_score: 96,
-      created_at_block: '1240',
-      expires_at_block: '6240',
-    },
-    {
-      lease_id: 'lease-102',
-      renter: '0x9965507D1a55bcC2695C58ba16FB37d819B0A4df',
-      host: '0x14dC79964da2C08b23698B3D3cc7Ca32193d9955',
-      escrow_amount: '2000000000000000000',
-      hardware_spec: 'NVIDIA A100-SXM4-80GB, 80GB VRAM required for DeepSeek LLM inference',
-      benchmark_log_url: 'https://raw.githubusercontent.com/yeou/public-logs/main/gtx1060_fraud_benchmark.txt',
-      status: 3, // FRAUD_REFUNDED
-      verdict: 'HARDWARE_FRAUDULENT',
-      reason: 'CRITICAL HARDWARE FRAUD DETECTED: Host submitted logs from an NVIDIA GeForce GTX 1060 (6GB VRAM) claiming to be an A100 80GB. Severe memory deficiency & thermal throttling.',
-      confidence: 100,
-      performance_score: 12,
-      created_at_block: '1290',
-      expires_at_block: '4290',
-    },
-    {
-      lease_id: 'lease-103',
-      renter: '0x976EA74026E72CD55542b2494B62d5563914a1aB',
-      host: '0x0000000000000000000000000000000000000000',
-      escrow_amount: '3500000000000000000',
-      hardware_spec: '8x NVIDIA GeForce RTX 4090 24GB, total 192GB VRAM, CUDA 12.2, min 660 TFLOPS',
-      benchmark_log_url: '',
-      status: 0, // OPEN
-      verdict: 'PENDING',
-      reason: 'Lease order open. Awaiting GPU host benchmark proof submission.',
-      confidence: 0,
-      performance_score: 0,
-      created_at_block: '1410',
-      expires_at_block: '4410',
-    },
-  ];
-
-  // Fetch On-Chain Leases and Stats
+  // Pure On-Chain Data Fetching (Zero Mocks)
   const fetchData = useCallback(async () => {
     setIsRefreshing(true);
+    setFetchError(null);
     try {
-      // 1. Fetch Stats
+      // 1. Fetch live block height from Studionet
+      const blk = await fetchCurrentBlockNumber();
+      if (blk > 0) setCurrentBlock(blk);
+
+      // 2. Fetch live contract GEN balance
+      const cBal = await fetchContractBalance();
+      setContractVaultBal(cBal);
+
+      // 3. Fetch Stats directly from contract
       try {
         const rawStats = await callContractView('get_stats', []);
         if (rawStats) {
@@ -98,32 +63,27 @@ export const App: React.FC = () => {
             total_leases_settled: Number(parsed.total_leases_settled || 0),
           });
         }
-      } catch (statsErr) {
-        console.warn('Could not read contract get_stats:', statsErr);
+      } catch (err: any) {
+        console.warn('On-chain get_stats call:', err);
       }
 
-      // 2. Fetch Leases Paginated
+      // 4. Fetch Paginated Leases directly from contract
       try {
         const rawLeases = await callContractView('get_leases_paginated', [0, 50]);
         if (rawLeases) {
           const list: LeaseOrderData[] = typeof rawLeases === 'string' ? JSON.parse(rawLeases) : rawLeases;
-          if (Array.isArray(list) && list.length > 0) {
+          if (Array.isArray(list)) {
             setLeases(list);
           } else {
-            // If contract is brand new and empty, show sample showcase leases
-            setLeases(fallbackSampleLeases);
-            setStats({
-              total_leases: 3,
-              total_compute_locked: '3500000000000000000',
-              total_leases_settled: 1,
-            });
+            setLeases([]);
           }
         } else {
-          setLeases(fallbackSampleLeases);
+          setLeases([]);
         }
-      } catch (leaseErr) {
-        console.warn('Could not read contract get_leases_paginated:', leaseErr);
-        setLeases(fallbackSampleLeases);
+      } catch (err: any) {
+        console.warn('On-chain get_leases_paginated call:', err);
+        setFetchError('Direct contract read failed. Please verify that the contract is deployed on Studionet.');
+        setLeases([]);
       }
     } finally {
       setIsRefreshing(false);
@@ -178,6 +138,12 @@ export const App: React.FC = () => {
     updateWalletState();
     fetchData();
 
+    // Live block & telemetry poller every 8 seconds
+    const interval = setInterval(() => {
+      fetchCurrentBlockNumber().then((b) => b > 0 && setCurrentBlock(b));
+      fetchContractBalance().then((bal) => setContractVaultBal(bal));
+    }, 8000);
+
     const ethereum = (window as any).ethereum;
     if (ethereum && ethereum.on) {
       const handleAccountsChanged = () => updateWalletState();
@@ -189,19 +155,29 @@ export const App: React.FC = () => {
       ethereum.on('chainChanged', handleChainChanged);
 
       return () => {
+        clearInterval(interval);
         ethereum.removeListener('accountsChanged', handleAccountsChanged);
         ethereum.removeListener('chainChanged', handleChainChanged);
       };
     }
+
+    return () => clearInterval(interval);
   }, [updateWalletState, fetchData]);
 
-  // Filtered and Searched Leases
+  // Tab and Search Filtering
   const filteredLeases = leases.filter((l) => {
-    // Status filter
-    if (statusFilter === 'OPEN' && l.status !== 0) return false;
-    if (statusFilter === 'IN_AUDIT' && l.status !== 1) return false;
-    if (statusFilter === 'SETTLED' && l.status !== 2) return false;
-    if (statusFilter === 'FRAUD' && l.status !== 3) return false;
+    // Tab filter
+    if (activeTab === 'MY_RENTER') {
+      if (!account || l.renter.toLowerCase() !== account.toLowerCase()) return false;
+    } else if (activeTab === 'MY_HOST') {
+      if (!account || l.host.toLowerCase() !== account.toLowerCase()) return false;
+    } else if (activeTab === 'OPEN') {
+      if (l.status !== 0) return false;
+    } else if (activeTab === 'IN_AUDIT') {
+      if (l.status !== 1) return false;
+    } else if (activeTab === 'SETTLED') {
+      if (l.status !== 2 && l.status !== 3) return false;
+    }
 
     // Search query
     if (searchQuery.trim()) {
@@ -220,81 +196,92 @@ export const App: React.FC = () => {
   const activeCount = leases.filter((l) => l.status === 0 || l.status === 1).length;
 
   return (
-    <div className="min-h-screen bg-[#0B131A] text-slate-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-[#04070D] text-slate-100 flex flex-col font-sans bg-quantum-grid relative selection:bg-[#00F0FF] selection:text-black">
       
+      {/* Top Ambient Glows */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-96 bg-radial-gradient-hero pointer-events-none"></div>
+
       {/* Navigation Bar */}
       <Navbar
         account={account}
         balance={balance}
         chainId={chainId}
+        currentBlock={currentBlock}
         onConnectWallet={handleConnectWallet}
         onRefresh={fetchData}
         isRefreshing={isRefreshing}
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
         
         {/* Hero Section */}
-        <div className="mb-8 p-6 sm:p-8 rounded-2xl bg-gradient-to-r from-[#121E2A] via-[#15222E] to-[#101C27] border border-[#2A3B4D] relative overflow-hidden shadow-xl">
-          <div className="absolute -right-10 -bottom-10 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
-          
+        <div className="mb-8 p-6 sm:p-10 rounded-3xl quantum-glass relative overflow-hidden">
           <div className="max-w-3xl relative z-10">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/80 border border-cyan-800 text-cyan-300 text-xs font-mono mb-3">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
-              <span>GenLayer Subjective Consensus • DePIN AI Hardware Escrow</span>
+            
+            {/* Live Telemetry Pill */}
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#00F0FF]/10 border border-[#00F0FF]/30 text-[#00F0FF] text-xs font-mono mb-4 shadow-quantum-cyan">
+              <Radio className="w-3.5 h-3.5 animate-pulse" />
+              <span>Studionet Live • Subjective AI Consensus Hardware Escrow</span>
             </div>
-            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white mb-3 font-mono">
-              Autonomous AI Compute <span className="text-[#38BDF8]">SLA Escrow</span>
+
+            <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white mb-4 font-mono leading-tight">
+              Autonomous AI Compute <br />
+              <span className="bg-gradient-to-r from-[#00F0FF] via-indigo-300 to-purple-400 bg-clip-text text-transparent">
+                SLA & Hashrate Escrow
+              </span>
             </h1>
-            <p className="text-sm sm:text-base text-slate-300 leading-relaxed font-sans mb-6">
-              Empowering autonomous AI agents and model trainers to rent high-performance GPU nodes 
-              (H100, A100, RTX 4090) with zero risk of hardware spoofing or VRAM throttling. 
-              GenLayer intelligent contracts verify live benchmark logs directly on-chain before releasing escrowed funds.
+
+            <p className="text-sm sm:text-base text-obsidian-300 leading-relaxed font-sans mb-6 max-w-2xl">
+              Eliminate hardware spoofing and VRAM throttling in decentralized GPU clouds. 
+              AI agents lock rental funds in escrow; GenLayer intelligent contracts render live benchmark logs directly on-chain 
+              to verify GPU models, VRAM capacity, and TFLOPS before releasing payments.
             </p>
 
             <div className="flex flex-wrap items-center gap-3">
               <button
                 onClick={() => setIsCreateOpen(true)}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500 text-white font-mono text-sm font-semibold shadow-hpc-glow transition-all"
+                className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-500 via-indigo-600 to-violet-600 hover:from-cyan-400 hover:to-violet-500 text-white font-mono text-sm font-bold shadow-quantum-cyan transition-all hover:scale-105"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-4 h-4 stroke-[3]" />
                 <span>Create Compute Lease Order</span>
               </button>
-              
-              <div className="text-xs font-mono text-slate-400 bg-[#0B131A] px-3 py-2 rounded-xl border border-[#2A3B4D] flex items-center gap-2">
-                <Terminal className="w-4 h-4 text-cyan-400" />
-                <span>Target Contract:</span>
-                <span className="text-slate-300 font-semibold truncate max-w-[140px] sm:max-w-[200px]">
-                  {getContractAddress()}
+
+              <div className="text-xs font-mono text-obsidian-400 bg-[#04070D]/80 px-4 py-3 rounded-xl border border-[#223456] flex items-center gap-2">
+                <Terminal className="w-4 h-4 text-[#00F0FF]" />
+                <span className="text-obsidian-400">Contract:</span>
+                <span className="text-[#00F0FF] font-semibold">
+                  {shortenAddress(getContractAddress())}
                 </span>
               </div>
             </div>
+
           </div>
         </div>
 
-        {/* Aggregated Cluster Telemetry Stats */}
-        <StatsBar stats={stats} activeCount={activeCount} />
+        {/* Aggregated Telemetry Stats */}
+        <StatsBar stats={stats} activeCount={activeCount} contractVaultBal={contractVaultBal} />
 
-        {/* Control Bar: Search & Filter Tabs */}
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 mb-6">
+        {/* Control Bar: Workspace Tabs & Search */}
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 mb-6">
           
-          {/* Status Tabs */}
-          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[#15222E] border border-[#2A3B4D] overflow-x-auto text-xs font-mono">
+          {/* Workspace Tabs */}
+          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[#0C1425] border border-[#223456] overflow-x-auto text-xs font-mono">
             {[
-              { id: 'ALL', label: 'All Modules' },
+              { id: 'ALL', label: `All Leases (${leases.length})` },
               { id: 'OPEN', label: 'Open for Host' },
               { id: 'IN_AUDIT', label: 'In AI Audit' },
-              { id: 'SETTLED', label: 'Verified & Paid' },
-              { id: 'FRAUD', label: 'Fraud / Refunded' },
+              { id: 'SETTLED', label: 'Settled & Verified' },
+              { id: 'MY_RENTER', label: 'My Renter Orders' },
+              { id: 'MY_HOST', label: 'My Host Claims' },
             ].map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setStatusFilter(tab.id)}
-                className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-all font-medium ${
-                  statusFilter === tab.id
-                    ? 'bg-cyan-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-[#0B131A]'
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-3.5 py-2 rounded-xl whitespace-nowrap transition-all font-semibold ${
+                  activeTab === tab.id
+                    ? 'bg-[#00F0FF] text-black shadow-quantum-cyan font-bold'
+                    : 'text-obsidian-400 hover:text-white hover:bg-[#121D33]'
                 }`}
               >
                 {tab.label}
@@ -303,20 +290,33 @@ export const App: React.FC = () => {
           </div>
 
           {/* Search Box */}
-          <div className="relative w-full md:w-80">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+          <div className="relative w-full lg:w-80">
+            <Search className="w-4 h-4 absolute left-3.5 top-3 text-obsidian-400" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by ID, GPU, or Address..."
-              className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-[#15222E] border border-[#2A3B4D] text-white text-xs font-mono placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition-colors"
+              placeholder="Search by Lease ID, GPU, or Address..."
+              className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-[#0C1425] border border-[#223456] text-white text-xs font-mono placeholder-obsidian-500 focus:outline-none focus:border-[#00F0FF] transition-all"
             />
           </div>
 
         </div>
 
-        {/* Leases Grid */}
+        {/* Error notification if direct view call had issues */}
+        {fetchError && (
+          <div className="p-4 rounded-2xl bg-amber-950/80 border border-amber-700/80 text-amber-200 text-xs font-mono mb-6 flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <span className="font-bold">On-Chain Sync Notice:</span> {fetchError}
+              <div className="mt-1 text-[11px] text-amber-300">
+                You can configure the target contract address anytime using the Settings icon in the navbar.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Leases Grid (Zero Mock: Displays Real On-Chain Leases) */}
         {filteredLeases.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredLeases.map((lease) => (
@@ -331,41 +331,59 @@ export const App: React.FC = () => {
             ))}
           </div>
         ) : (
-          <div className="p-12 rounded-2xl bg-[#15222E] border border-[#2A3B4D] text-center flex flex-col items-center justify-center">
-            <div className="w-12 h-12 rounded-full bg-cyan-950/60 border border-cyan-800 text-cyan-400 flex items-center justify-center mb-3">
-              <Server className="w-6 h-6" />
+          <div className="p-16 rounded-3xl quantum-glass text-center flex flex-col items-center justify-center border-dashed border-[#223456]">
+            <div className="w-16 h-16 rounded-2xl bg-[#00F0FF]/10 border border-[#00F0FF]/30 text-[#00F0FF] flex items-center justify-center mb-4 shadow-quantum-cyan">
+              <Server className="w-8 h-8" />
             </div>
-            <h3 className="text-base font-bold text-slate-200 font-mono mb-1">No Compute Orders Found</h3>
-            <p className="text-xs text-slate-400 max-w-sm mb-4 font-mono">
-              There are no hardware leases matching your filter criteria. Be the first to create one!
+            <h3 className="text-lg font-bold text-white font-mono mb-2">
+              {activeTab === 'MY_RENTER' || activeTab === 'MY_HOST'
+                ? 'No Associated Compute Orders in Current Wallet'
+                : 'Genesis Compute State — 0 Leases on Smart Contract'}
+            </h3>
+            <p className="text-xs text-obsidian-400 max-w-md mb-6 font-mono leading-relaxed">
+              {activeTab === 'MY_RENTER' || activeTab === 'MY_HOST'
+                ? `Wallet ${shortenAddress(account || '')} has not participated in this role yet.`
+                : 'The deployed contract on Studionet is active and waiting for its first compute lease order. Create an order to lock GEN and initiate decentralized AI hardware verification!'}
             </p>
             <button
               onClick={() => setIsCreateOpen(true)}
-              className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-mono text-xs font-semibold"
+              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[#00F0FF] hover:bg-cyan-400 text-black font-mono text-xs font-bold shadow-quantum-cyan transition-all"
             >
-              Create Compute Order
+              <Sparkles className="w-4 h-4" />
+              <span>Create First On-Chain Order</span>
             </button>
           </div>
         )}
 
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-[#2A3B4D] bg-[#0E1721] py-6 text-xs font-mono text-slate-500 mt-12">
+      {/* High-Tech Footer */}
+      <footer className="border-t border-[#223456]/60 bg-[#04070D]/90 py-8 text-xs font-mono text-obsidian-400 mt-16 relative z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <span className="text-slate-300 font-bold">AgentLease</span>
-            <span>• Built for Agent Tank Hackathon (DePIN & Agentic Economy)</span>
+            <Shield className="w-4 h-4 text-[#00F0FF]" />
+            <span className="text-white font-bold">AgentLease</span>
+            <span>• DePIN AI Hardware SLA Verification Engine on GenLayer</span>
           </div>
-          <div className="flex items-center gap-4 text-slate-400">
-            <span>GenLayer StudioNet (Chain ID: 61999)</span>
+          <div className="flex items-center gap-4 text-obsidian-400">
+            <span>Studionet (61999)</span>
+            <span>•</span>
             <a
               href="https://studio.genlayer.com"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-cyan-400 underline"
+              className="text-[#00F0FF] hover:underline"
             >
-              Studio IDE
+              GenLayer Studio IDE
+            </a>
+            <span>•</span>
+            <a
+              href="https://github.com/luongnhan9999/AgentLease"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-white underline"
+            >
+              GitHub Source
             </a>
           </div>
         </div>

@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import { Cpu, Server, Wallet, RefreshCw, Settings, ExternalLink, ShieldCheck, AlertCircle } from 'lucide-react';
+import { Server, Wallet, RefreshCw, Settings, ExternalLink, ShieldCheck, AlertCircle, Copy, Check, Blocks } from 'lucide-react';
 import { shortenAddress, formatGen } from '../utils/helpers';
-import { switchToStudioNet, STUDIONET_CHAIN_ID, getContractAddress, setContractAddress } from '../config/genlayer';
+import { switchToStudioNet, STUDIONET_CHAIN_ID, getContractAddress, setContractAddress, STUDIONET_EXPLORER } from '../config/genlayer';
 
 interface NavbarProps {
   account: string | null;
   balance: string;
   chainId: number | null;
+  currentBlock: number;
   onConnectWallet: () => void;
   onRefresh: () => void;
   isRefreshing: boolean;
@@ -16,12 +17,14 @@ export const Navbar: React.FC<NavbarProps> = ({
   account,
   balance,
   chainId,
+  currentBlock,
   onConnectWallet,
   onRefresh,
   isRefreshing,
 }) => {
   const [showConfig, setShowConfig] = useState(false);
   const [contractInput, setContractInput] = useState(getContractAddress());
+  const [copied, setCopied] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   const isCorrectChain = chainId === STUDIONET_CHAIN_ID;
@@ -33,88 +36,123 @@ export const Navbar: React.FC<NavbarProps> = ({
       setSaveSuccess(false);
       setShowConfig(false);
       onRefresh();
-    }, 900);
+    }, 800);
+  };
+
+  const handleCopyContract = () => {
+    navigator.clipboard.writeText(getContractAddress());
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   };
 
   return (
     <>
-      <header className="border-b border-[#2A3B4D] bg-[#0E1721]/90 backdrop-blur-md sticky top-0 z-40">
+      <header className="border-b border-[#223456]/60 bg-[#04070D]/85 backdrop-blur-xl sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-4">
           
           {/* Logo & Brand */}
           <div className="flex items-center gap-3">
-            <div className="relative flex items-center justify-center w-11 h-11 rounded-lg bg-[#15222E] border border-cyan-500/40 shadow-hpc-glow">
-              <Server className="w-6 h-6 text-[#38BDF8]" />
+            <div className="relative flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br from-[#0C1425] to-[#121D33] border border-[#00F0FF]/30 shadow-quantum-cyan group cursor-pointer">
+              <Server className="w-5 h-5 text-[#00F0FF] group-hover:scale-110 transition-transform duration-300" />
               <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00F0FF] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-[#00F0FF]"></span>
               </span>
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xl font-bold tracking-tight text-white font-mono">Agent<span className="text-[#38BDF8]">Lease</span></span>
-                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-800">
-                  DePIN SLA Escrow
+                <span className="text-xl font-bold tracking-tight text-white font-mono">
+                  Agent<span className="text-[#00F0FF]">Lease</span>
+                </span>
+                <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-[#00F0FF]/10 text-[#00F0FF] border border-[#00F0FF]/30 font-semibold tracking-wider">
+                  GenLayer On-Chain
                 </span>
               </div>
-              <p className="text-xs text-slate-400 font-mono hidden sm:block">Autonomous AI Compute & Hashrate Verification</p>
+              <p className="text-xs text-obsidian-400 font-mono hidden sm:block">
+                Autonomous AI Compute SLA & Hashrate Verification
+              </p>
             </div>
           </div>
 
-          {/* Center: Network Status */}
-          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#15222E] border border-[#2A3B4D] text-xs font-mono">
-            <span className={`w-2.5 h-2.5 rounded-full ${isCorrectChain ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`}></span>
-            <span className="text-slate-300">Network:</span>
-            <span className={isCorrectChain ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
-              {isCorrectChain ? 'StudioNet (61999)' : 'Wrong Network'}
-            </span>
-            {!isCorrectChain && (
-              <button
-                onClick={() => switchToStudioNet()}
-                className="ml-2 text-[11px] underline text-cyan-400 hover:text-cyan-300"
-              >
-                Switch
-              </button>
-            )}
+          {/* Center: Live On-Chain Telemetry */}
+          <div className="hidden lg:flex items-center gap-3">
+            {/* Live Block Height Pill */}
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0C1425] border border-[#223456] text-xs font-mono text-slate-300">
+              <Blocks className="w-3.5 h-3.5 text-[#00F0FF] animate-pulse" />
+              <span className="text-obsidian-400">Block:</span>
+              <span className="text-[#00F0FF] font-semibold">
+                {currentBlock > 0 ? `#${currentBlock.toLocaleString()}` : 'Syncing...'}
+              </span>
+            </div>
+
+            {/* Network Pill */}
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0C1425] border border-[#223456] text-xs font-mono">
+              <span className={`w-2 h-2 rounded-full ${isCorrectChain ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`}></span>
+              <span className="text-obsidian-400">Net:</span>
+              <span className={isCorrectChain ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+                {isCorrectChain ? 'StudioNet (61999)' : 'Wrong Network'}
+              </span>
+              {!isCorrectChain && (
+                <button
+                  onClick={() => switchToStudioNet()}
+                  className="ml-1 text-[11px] underline text-[#00F0FF] hover:text-cyan-300 font-bold"
+                >
+                  Switch
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* Right: Actions, Contract Config & Wallet */}
+          {/* Right: Contract Switcher & Wallet */}
           <div className="flex items-center gap-3">
             
+            {/* Direct Contract Address pill (Copyable) */}
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0C1425] border border-[#223456] text-xs font-mono text-slate-300">
+              <span className="text-obsidian-400">Contract:</span>
+              <span className="text-slate-200 font-semibold">{shortenAddress(getContractAddress())}</span>
+              <button
+                onClick={handleCopyContract}
+                className="text-obsidian-400 hover:text-[#00F0FF] transition-colors p-1"
+                title="Copy intelligent contract address"
+              >
+                {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+
             {/* Refresh button */}
             <button
               onClick={onRefresh}
               disabled={isRefreshing}
-              title="Refresh on-chain cluster data"
-              className="p-2 rounded-lg bg-[#15222E] border border-[#2A3B4D] hover:border-cyan-500/50 text-slate-300 hover:text-white transition-all disabled:opacity-50"
+              title="Refresh on-chain state"
+              className="p-2.5 rounded-xl bg-[#0C1425] border border-[#223456] hover:border-[#00F0FF]/50 text-slate-300 hover:text-white transition-all disabled:opacity-50"
             >
-              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-cyan-400' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-[#00F0FF]' : ''}`} />
             </button>
 
-            {/* Contract Address Config Button */}
+            {/* Contract Config Button */}
             <button
               onClick={() => setShowConfig(!showConfig)}
-              title="Configure Deployed Contract Address"
-              className="p-2 rounded-lg bg-[#15222E] border border-[#2A3B4D] hover:border-cyan-500/50 text-slate-300 hover:text-white transition-all"
+              title="Configure Contract Address"
+              className="p-2.5 rounded-xl bg-[#0C1425] border border-[#223456] hover:border-[#00F0FF]/50 text-slate-300 hover:text-white transition-all"
             >
               <Settings className="w-4 h-4" />
             </button>
 
             {/* Wallet Connect */}
             {account ? (
-              <div className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-lg bg-[#15222E] border border-[#2A3B4D]">
-                <div className="hidden sm:flex flex-col text-right font-mono text-xs leading-tight">
-                  <span className="text-cyan-300 font-medium">{formatGen(balance)}</span>
-                  <span className="text-[10px] text-slate-400">{shortenAddress(account)}</span>
+              <div className="flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-xl bg-gradient-to-r from-[#0C1425] to-[#121D33] border border-[#223456] hover:border-[#00F0FF]/40 transition-all">
+                <div className="flex flex-col text-right font-mono text-xs leading-tight">
+                  <span className="text-[#00F0FF] font-semibold">{formatGen(balance)}</span>
+                  <span className="text-[10px] text-obsidian-400">{shortenAddress(account)}</span>
                 </div>
-                <div className="w-7 h-7 rounded bg-cyan-950 flex items-center justify-center border border-cyan-800 text-cyan-400">
-                  <Cpu className="w-4 h-4" />
+                <div className="w-7 h-7 rounded-lg bg-[#00F0FF]/10 flex items-center justify-center border border-[#00F0FF]/30 text-[#00F0FF]">
+                  <Wallet className="w-3.5 h-3.5" />
                 </div>
               </div>
             ) : (
               <button
                 onClick={onConnectWallet}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500 text-white font-mono text-sm font-medium shadow-hpc-glow transition-all"
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 via-indigo-600 to-violet-600 hover:from-cyan-500 hover:to-violet-500 text-white font-mono text-xs font-semibold shadow-quantum-cyan transition-all"
               >
                 <Wallet className="w-4 h-4" />
                 <span>Connect Node Wallet</span>
@@ -127,11 +165,11 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Contract Config Modal / Drawer */}
       {showConfig && (
-        <div className="bg-[#15222E] border-b border-[#2A3B4D] p-4 text-xs font-mono animate-fadeIn">
+        <div className="bg-[#0C1425] border-b border-[#223456] p-4 text-xs font-mono animate-fadeIn">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-slate-300">
-              <ShieldCheck className="w-4 h-4 text-cyan-400" />
-              <span>Target Deployed Intelligent Contract (Studionet):</span>
+              <ShieldCheck className="w-4 h-4 text-[#00F0FF]" />
+              <span>Target Deployed Intelligent Contract on Studionet:</span>
             </div>
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <input
@@ -139,11 +177,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                 value={contractInput}
                 onChange={(e) => setContractInput(e.target.value)}
                 placeholder="0x..."
-                className="w-full sm:w-96 px-3 py-1.5 rounded bg-[#0B131A] border border-[#2A3B4D] text-white focus:outline-none focus:border-cyan-500 font-mono text-xs"
+                className="w-full sm:w-96 px-3 py-1.5 rounded-lg bg-[#04070D] border border-[#223456] text-white focus:outline-none focus:border-[#00F0FF] font-mono text-xs"
               />
               <button
                 onClick={handleSaveContract}
-                className="px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white font-medium whitespace-nowrap"
+                className="px-4 py-1.5 rounded-lg bg-[#00F0FF] hover:bg-cyan-400 text-black font-semibold whitespace-nowrap transition-colors"
               >
                 {saveSuccess ? 'Saved!' : 'Save'}
               </button>
@@ -152,23 +190,23 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       )}
 
-      {/* Zero balance guidance banner */}
+      {/* Zero balance alert banner */}
       {account && balance === '0' && (
-        <div className="bg-amber-950/70 border-b border-amber-800/80 px-4 py-2 text-xs font-mono text-amber-200">
-          <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
+        <div className="bg-amber-950/80 border-b border-amber-700/60 px-4 py-2 text-xs font-mono text-amber-200">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />
               <span>
-                Your wallet balance is 0 GEN. To lock compute escrow or submit proofs, request test GEN from the Studio faucet:
+                Your wallet balance is 0 GEN. Please request testnet funds to deploy escrow or submit proofs:
               </span>
             </div>
             <a
-              href="https://studio.genlayer.com"
+              href={`${STUDIONET_EXPLORER}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1 text-cyan-300 underline hover:text-cyan-200 whitespace-nowrap font-medium"
+              className="flex items-center gap-1 text-[#00F0FF] underline hover:text-cyan-300 whitespace-nowrap font-medium"
             >
-              <span>GenLayer Studio Accounts</span>
+              <span>GenLayer Studio Faucet</span>
               <ExternalLink className="w-3 h-3" />
             </a>
           </div>
