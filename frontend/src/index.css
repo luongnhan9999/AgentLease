@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #0B131A;
+    color: #F1F5F9;
+    font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* Custom scrollbars for telemetry readouts */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0B131A;
+}
+::-webkit-scrollbar-thumb {
+  background: #2A3B4D;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #38BDF8;
+}
+
+/* Pulse animation for active cluster computing */
+@keyframes cluster-pulse {
+  0%, 100% { opacity: 1; filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.6)); }
+  50% { opacity: 0.6; filter: drop-shadow(0 0 2px rgba(56, 189, 248, 0.2)); }
+}
+
+.animate-cluster {
+  animation: cluster-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
