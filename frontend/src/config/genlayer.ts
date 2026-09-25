@@ -40,7 +40,7 @@ export const GENLAYER_CHAIN_CONFIG = {
 };
 
 const STORAGE_KEY_CONTRACT = 'agentlease_contract_address';
-export const DEFAULT_CONTRACT_ADDRESS = '0xb38662B543D7B1B679B92d00c3132D9e8D455c3c';
+export const DEFAULT_CONTRACT_ADDRESS = '0x98C8d3F0C9841eF9AfED734C1264b0aDC9FBE264';
 
 export function getContractAddress(): string {
   return localStorage.getItem(STORAGE_KEY_CONTRACT) || (import.meta as any).env?.VITE_AGENTLEASE_CONTRACT_ADDRESS || DEFAULT_CONTRACT_ADDRESS;
