@@ -46,7 +46,6 @@ export const CreateLease: React.FC<CreateLeaseProps> = ({
     }
   };
 
-  // Convert blocks to approximate real-world duration (approx 3 seconds per block on GenLayer)
   const blockCount = parseInt(durationBlocks, 10) || 0;
   const approxSeconds = blockCount * 3;
   const approxHours = (approxSeconds / 3600).toFixed(1);
@@ -87,38 +86,36 @@ export const CreateLease: React.FC<CreateLeaseProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-2xl bg-[#090E1A] border border-[#223456] rounded-2xl shadow-2xl overflow-hidden font-sans max-h-[92vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
+      <div className="relative w-full max-w-2xl bg-gray-900 border border-gray-800 rounded-xl shadow-2xl overflow-hidden font-sans max-h-[92vh] flex flex-col">
         
-        {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#223456] bg-[#04070D] flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-[#00F0FF]/10 border border-[#00F0FF]/30 text-[#00F0FF] shadow-quantum-cyan">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 bg-[#0B0F19] flex-shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-lg bg-blue-600/10 text-blue-500 border border-blue-500/20">
               <Cpu className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-white font-mono flex items-center gap-2">
-                <span>Lock On-Chain Compute SLA Escrow</span>
-              </h3>
-              <p className="text-xs text-obsidian-400">Deploy a tamper-proof hardware rental order to GenLayer Studionet</p>
+              <h3 className="text-base font-bold text-white">Deploy GPU Compute SLA Order</h3>
+              <p className="text-xs text-gray-400">Lock escrow in GEN and establish on-chain SLA benchmark thresholds</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-obsidian-400 hover:text-white hover:bg-[#121D33] transition-colors"
+            className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Modal Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto">
+        {/* Body */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
           
-          {/* Quick Hardware Presets */}
+          {/* Preset GPU Instance Catalog */}
           <div>
-            <label className="block text-xs font-mono uppercase text-obsidian-400 mb-2 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-[#00F0FF]" />
-              <span>1-Click Enterprise GPU Cluster Presets</span>
+            <label className="block text-xs font-mono uppercase text-gray-400 mb-2 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+              <span>Select Cloud Hardware Instance Template</span>
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               {GPU_SLA_PRESETS.map((p, idx) => {
@@ -128,22 +125,22 @@ export const CreateLease: React.FC<CreateLeaseProps> = ({
                     key={idx}
                     type="button"
                     onClick={() => handleApplyPreset(idx)}
-                    className={`p-3 rounded-xl border text-left transition-all relative ${
+                    className={`p-3 rounded-lg border text-left transition-all relative ${
                       isSelected
-                        ? 'bg-[#00F0FF]/10 border-[#00F0FF] text-white shadow-quantum-cyan'
-                        : 'bg-[#0C1425] border-[#223456] text-obsidian-300 hover:border-obsidian-500'
+                        ? 'bg-blue-600/10 border-blue-500 text-white'
+                        : 'bg-gray-950 border-gray-800 text-gray-300 hover:border-gray-700'
                     }`}
                   >
                     {isSelected && (
-                      <span className="absolute top-2 right-2 w-4 h-4 rounded-full bg-[#00F0FF] text-black flex items-center justify-center text-[10px]">
+                      <span className="absolute top-2 right-2 w-4 h-4 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px]">
                         <Check className="w-2.5 h-2.5 stroke-[3]" />
                       </span>
                     )}
-                    <div className="text-xs font-bold font-mono truncate pr-4 text-white">
-                      {p.name.split(' ')[1]} {p.name.split(' ')[2]}
+                    <div className="text-xs font-bold truncate pr-4 text-white">
+                      {p.name}
                     </div>
-                    <div className="flex items-center gap-2 mt-1 text-[11px] font-mono text-obsidian-400">
-                      <span className="text-[#00F0FF] font-semibold">{p.vram}</span>
+                    <div className="flex items-center gap-1.5 mt-1 text-[11px] font-mono text-gray-400">
+                      <span className="text-blue-400 font-medium">{p.vram}</span>
                       <span>•</span>
                       <span>{p.recommendedEscrow} GEN</span>
                     </div>
@@ -155,23 +152,23 @@ export const CreateLease: React.FC<CreateLeaseProps> = ({
 
           {/* Hardware Spec Requirements */}
           <div>
-            <div className="flex items-center justify-between text-xs font-mono uppercase text-slate-300 mb-1.5">
+            <div className="flex items-center justify-between text-xs font-mono uppercase text-gray-300 mb-1.5">
               <span className="flex items-center gap-1.5">
-                <Gauge className="w-3.5 h-3.5 text-[#00F0FF]" />
-                <span>GPU SLA Hardware & Hashrate Requirements</span>
+                <Gauge className="w-3.5 h-3.5 text-blue-400" />
+                <span>Service Level Agreement (SLA) Requirements</span>
               </span>
-              <span className="text-[10px] text-obsidian-400 lowercase">natural language SLA</span>
+              <span className="text-[10px] text-gray-400 lowercase">Natural Language SLA</span>
             </div>
             <textarea
               rows={3}
               value={hardwareSpec}
               onChange={(e) => setHardwareSpec(e.target.value)}
               placeholder="e.g. NVIDIA H100 80GB SXM5, min 80GB HBM3 VRAM, >950 TFLOPS FP16 throughput"
-              className="w-full px-3.5 py-2.5 rounded-xl bg-[#04070D] border border-[#223456] text-white placeholder-obsidian-500 focus:outline-none focus:border-[#00F0FF] text-xs font-mono leading-relaxed"
+              className="w-full px-3.5 py-2.5 rounded-lg bg-gray-950 border border-gray-800 text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 text-xs font-mono leading-relaxed"
               required
             />
-            <p className="text-[11px] text-obsidian-400 mt-1">
-              GenLayer AI validators will execute <code className="text-[#00F0FF]">gl.nondet.web.render</code> to parse raw benchmark logs against these requirements.
+            <p className="text-[11px] text-gray-400 mt-1">
+              GenLayer AI validators will inspect the host's raw diagnostic logs directly against these specifications.
             </p>
           </div>
 
@@ -180,12 +177,12 @@ export const CreateLease: React.FC<CreateLeaseProps> = ({
             
             {/* Escrow Deposit */}
             <div>
-              <div className="flex items-center justify-between text-xs font-mono uppercase text-slate-300 mb-1.5">
+              <div className="flex items-center justify-between text-xs font-mono uppercase text-gray-300 mb-1.5">
                 <span className="flex items-center gap-1">
-                  <Coins className="w-3.5 h-3.5 text-[#00F0FF]" />
+                  <Coins className="w-3.5 h-3.5 text-blue-400" />
                   <span>Escrow Deposit (GEN)</span>
                 </span>
-                <span className="text-[10px] text-obsidian-400 lowercase">
+                <span className="text-[10px] text-gray-400 lowercase">
                   Bal: {formatGen(userBalance)}
                 </span>
               </div>
@@ -197,22 +194,22 @@ export const CreateLease: React.FC<CreateLeaseProps> = ({
                   min="0.001"
                   value={escrowGen}
                   onChange={(e) => setEscrowGen(e.target.value)}
-                  className="w-full pl-3 pr-14 py-2.5 rounded-xl bg-[#04070D] border border-[#223456] text-white focus:outline-none focus:border-[#00F0FF] font-mono text-sm font-semibold"
+                  className="w-full pl-3 pr-14 py-2 rounded-lg bg-gray-950 border border-gray-800 text-white focus:outline-none focus:border-blue-500 font-mono text-sm"
                   required
                 />
-                <span className="absolute right-3 top-3 text-xs font-mono text-[#00F0FF] font-bold">
+                <span className="absolute right-3 top-2 text-xs font-mono text-blue-400 font-bold">
                   GEN
                 </span>
               </div>
 
-              {/* Quick Percentage Chips */}
+              {/* Quick % buttons */}
               <div className="flex items-center gap-1.5">
                 {[25, 50, 75, 100].map((pct) => (
                   <button
                     key={pct}
                     type="button"
                     onClick={() => handleSetBalancePercent(pct)}
-                    className="px-2 py-0.5 rounded-md bg-[#0C1425] hover:bg-[#192642] text-[10px] font-mono text-obsidian-400 hover:text-white border border-[#223456]"
+                    className="px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-[10px] font-mono text-gray-300 hover:text-white border border-gray-700 transition-colors"
                   >
                     {pct === 100 ? 'MAX' : `${pct}%`}
                   </button>
@@ -222,12 +219,12 @@ export const CreateLease: React.FC<CreateLeaseProps> = ({
 
             {/* Duration Blocks */}
             <div>
-              <div className="flex items-center justify-between text-xs font-mono uppercase text-slate-300 mb-1.5">
+              <div className="flex items-center justify-between text-xs font-mono uppercase text-gray-300 mb-1.5">
                 <span className="flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5 text-[#00F0FF]" />
-                  <span>Lease Window (Blocks)</span>
+                  <Clock className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Claim Window (Blocks)</span>
                 </span>
-                <span className="text-[10px] text-obsidian-400 lowercase">
+                <span className="text-[10px] text-gray-400 lowercase">
                   ~{approxHours} hrs (~3s/blk)
                 </span>
               </div>
@@ -237,11 +234,11 @@ export const CreateLease: React.FC<CreateLeaseProps> = ({
                 step="50"
                 value={durationBlocks}
                 onChange={(e) => setDurationBlocks(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl bg-[#04070D] border border-[#223456] text-white focus:outline-none focus:border-[#00F0FF] font-mono text-sm font-semibold"
+                className="w-full px-3 py-2 rounded-lg bg-gray-950 border border-gray-800 text-white focus:outline-none focus:border-blue-500 font-mono text-sm"
                 required
               />
-              <p className="text-[10px] text-obsidian-400 mt-1">
-                If no host claims before expiration, you can reclaim 100% of your escrow on-chain.
+              <p className="text-[10px] text-gray-400 mt-1">
+                You can cancel and reclaim 100% of the funds if the order is unclaimed past this block duration.
               </p>
             </div>
 
@@ -249,30 +246,30 @@ export const CreateLease: React.FC<CreateLeaseProps> = ({
 
           {/* Error Notice */}
           {errorMsg && (
-            <div className="p-3.5 rounded-xl bg-rose-950/80 border border-rose-700/80 text-rose-300 text-xs font-mono flex items-start gap-2">
+            <div className="p-3 rounded-lg bg-red-950/80 border border-red-800 text-red-300 text-xs font-mono flex items-start gap-2">
               <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
               <span>{errorMsg}</span>
             </div>
           )}
 
           {/* Modal Footer */}
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#223456]">
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-gray-800">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-[#04070D] hover:bg-[#121D33] text-obsidian-300 font-mono text-xs transition-colors"
+              className="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-sans text-xs transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 via-indigo-600 to-violet-600 hover:from-cyan-400 hover:to-violet-500 text-white font-mono text-xs font-bold shadow-quantum-cyan transition-all disabled:opacity-50"
+              className="flex items-center gap-2 px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-sans text-xs font-semibold shadow-sm transition-colors disabled:opacity-50"
             >
               {isSubmitting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Locking Escrow on Studionet...</span>
+                  <span>Locking Escrow on Chain...</span>
                 </>
               ) : (
                 <span>Confirm & Lock Escrow</span>

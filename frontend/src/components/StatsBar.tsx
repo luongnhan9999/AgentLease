@@ -1,5 +1,5 @@
 import React from 'react';
-import { Lock, CheckCircle2, Activity, Zap, Cpu, ShieldCheck } from 'lucide-react';
+import { Lock, CheckCircle2, Activity, Zap, ShieldCheck } from 'lucide-react';
 import { ClusterStats, formatGen } from '../utils/helpers';
 
 interface StatsBarProps {
@@ -10,80 +10,75 @@ interface StatsBarProps {
 
 export const StatsBar: React.FC<StatsBarProps> = ({ stats, activeCount, contractVaultBal }) => {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
       
       {/* 1. Total Compute Escrow Locked */}
-      <div className="p-5 rounded-2xl quantum-glass relative overflow-hidden group">
-        <div className="absolute top-0 right-0 w-24 h-24 bg-[#00F0FF]/10 rounded-full blur-2xl pointer-events-none group-hover:bg-[#00F0FF]/20 transition-all"></div>
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-mono uppercase tracking-wider text-obsidian-400">Total Compute Escrow</span>
-          <div className="p-2 rounded-xl bg-[#00F0FF]/10 border border-[#00F0FF]/30 text-[#00F0FF] shadow-quantum-cyan">
+      <div className="p-5 rounded-xl bg-gray-900/90 border border-gray-800 shadow-sm">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-mono uppercase text-gray-400">Total Escrow Locked</span>
+          <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400">
             <Lock className="w-4 h-4" />
           </div>
         </div>
         <div className="text-2xl font-bold font-mono text-white tracking-tight">
           {formatGen(stats.total_compute_locked)}
         </div>
-        <div className="text-[11px] text-obsidian-400 font-mono mt-1.5 flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#00F0FF] animate-pulse"></span>
-          <span>Vault: {formatGen(contractVaultBal)}</span>
+        <div className="text-[11px] text-gray-400 font-mono mt-1.5 flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+          <span>Contract Vault: {formatGen(contractVaultBal)}</span>
         </div>
       </div>
 
       {/* 2. Leases Settled */}
-      <div className="p-5 rounded-2xl quantum-glass relative overflow-hidden group">
-        <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-emerald-500/20 transition-all"></div>
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-mono uppercase tracking-wider text-obsidian-400">Verified SLA Settlements</span>
-          <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 shadow-quantum-emerald">
+      <div className="p-5 rounded-xl bg-gray-900/90 border border-gray-800 shadow-sm">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-mono uppercase text-gray-400">SLA Settlements</span>
+          <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400">
             <CheckCircle2 className="w-4 h-4" />
           </div>
         </div>
         <div className="text-2xl font-bold font-mono text-emerald-400 tracking-tight">
           {stats.total_leases_settled}
         </div>
-        <div className="text-[11px] text-obsidian-400 font-mono mt-1.5 flex items-center gap-1.5">
+        <div className="text-[11px] text-gray-400 font-mono mt-1.5 flex items-center gap-1.5">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Zero-chargeback hardware payout</span>
+          <span>Zero-chargeback host payouts</span>
         </div>
       </div>
 
-      {/* 3. Active Compute In-Flight */}
-      <div className="p-5 rounded-2xl quantum-glass relative overflow-hidden group">
-        <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-amber-500/20 transition-all"></div>
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-mono uppercase tracking-wider text-obsidian-400">Active Compute Leases</span>
-          <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400">
+      {/* 3. Active GPU Leases */}
+      <div className="p-5 rounded-xl bg-gray-900/90 border border-gray-800 shadow-sm">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-mono uppercase text-gray-400">Active Compute Leases</span>
+          <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400">
             <Activity className="w-4 h-4" />
           </div>
         </div>
         <div className="text-2xl font-bold font-mono text-amber-300 tracking-tight">
-          {activeCount} <span className="text-xs text-obsidian-400 font-normal">/ {stats.total_leases} Total</span>
+          {activeCount} <span className="text-xs text-gray-400 font-normal">/ {stats.total_leases} total</span>
         </div>
-        <div className="text-[11px] text-obsidian-400 font-mono mt-1.5 flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
-          <span>Awaiting host or in AI jury audit</span>
+        <div className="text-[11px] text-gray-400 font-mono mt-1.5 flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+          <span>Open for claim or in verification</span>
         </div>
       </div>
 
       {/* 4. Subjective AI Consensus Engine */}
-      <div className="p-5 rounded-2xl quantum-glass relative overflow-hidden group">
-        <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-indigo-500/20 transition-all"></div>
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-mono uppercase tracking-wider text-obsidian-400">Subjective Consensus</span>
-          <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 shadow-quantum-violet">
+      <div className="p-5 rounded-xl bg-gray-900/90 border border-gray-800 shadow-sm">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-mono uppercase text-gray-400">AI Consensus SLA</span>
+          <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-400">
             <Zap className="w-4 h-4" />
           </div>
         </div>
-        <div className="text-xl font-bold font-mono text-indigo-300 flex items-center gap-2 tracking-tight">
+        <div className="text-xl font-bold font-mono text-purple-300 flex items-center gap-2 tracking-tight">
           <span>gl.nondet</span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-950/80 border border-indigo-700/80 text-indigo-200">
+          <span className="text-[10px] px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800">
             AI Jury
           </span>
         </div>
-        <div className="text-[11px] text-obsidian-400 font-mono mt-1.5 flex items-center gap-1.5">
-          <Cpu className="w-3.5 h-3.5 text-indigo-400" />
-          <span>Live web rendering & benchmark audit</span>
+        <div className="text-[11px] text-gray-400 font-mono mt-1.5 flex items-center gap-1.5">
+          <span>Direct web rendering & benchmark audit</span>
         </div>
       </div>
 

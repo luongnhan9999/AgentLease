@@ -51,7 +51,7 @@ export const SubmitProof: React.FC<SubmitProofProps> = ({
       setPreviewContent(text.slice(0, 1500));
     } catch (err: any) {
       console.warn('Preview fetch error:', err);
-      setPreviewError('CORS prevented direct browser preview or URL is unreachable. GenLayer validators fetch directly via backend.');
+      setPreviewError('Browser CORS prevented local preview or URL is unreachable. GenLayer validators fetch directly via backend.');
     } finally {
       setIsPreviewing(false);
     }
@@ -81,51 +81,49 @@ export const SubmitProof: React.FC<SubmitProofProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-2xl bg-[#090E1A] border border-[#223456] rounded-2xl shadow-2xl overflow-hidden font-sans max-h-[92vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
+      <div className="relative w-full max-w-2xl bg-gray-900 border border-gray-800 rounded-xl shadow-2xl overflow-hidden font-sans max-h-[92vh] flex flex-col">
         
-        {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#223456] bg-[#04070D] flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-teal-500/10 border border-teal-500/30 text-teal-400 shadow-quantum-cyan">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 bg-[#0B0F19] flex-shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-lg bg-emerald-600/10 text-emerald-400 border border-emerald-500/20">
               <HardDrive className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-white font-mono flex items-center gap-2">
-                <span>Submit GPU Hardware Proof & Hashrate SLA</span>
-              </h3>
-              <p className="text-xs text-obsidian-400">
-                Claim <span className="text-[#00F0FF] font-mono font-semibold">{lease.lease_id}</span> as Node Provider
+              <h3 className="text-base font-bold text-white">Submit Node Benchmark Diagnostic Proof</h3>
+              <p className="text-xs text-gray-400">
+                Claim order <span className="text-blue-400 font-mono font-semibold">{lease.lease_id}</span> as GPU Node Provider
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-obsidian-400 hover:text-white hover:bg-[#121D33] transition-colors"
+            className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Modal Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto">
+        {/* Body */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
           
           {/* Target Spec Summary Banner */}
-          <div className="p-4 rounded-xl bg-[#0C1425] border border-[#223456]">
-            <div className="flex items-center justify-between text-xs font-mono uppercase text-obsidian-400 mb-1.5">
+          <div className="p-3.5 rounded-lg bg-gray-950 border border-gray-800">
+            <div className="flex items-center justify-between text-xs font-mono uppercase text-gray-400 mb-1">
               <span>Required SLA Benchmark Targets:</span>
-              <span className="text-[#00F0FF] font-semibold">{parsedSpecs.model}</span>
+              <span className="text-white font-semibold">{parsedSpecs.model}</span>
             </div>
-            <p className="text-xs text-slate-200 font-mono leading-relaxed bg-[#04070D] p-3 rounded-lg border border-[#192642]">
+            <p className="text-xs text-gray-300 font-mono leading-relaxed bg-gray-900 p-2.5 rounded border border-gray-800">
               {lease.hardware_spec}
             </p>
           </div>
 
           {/* Quick Benchmark Presets */}
           <div>
-            <label className="block text-xs font-mono uppercase text-obsidian-400 mb-2 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-[#00F0FF]" />
-              <span>Select Sample Benchmark Proof URL for Instant Testing:</span>
+            <label className="block text-xs font-mono uppercase text-gray-400 mb-2 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+              <span>Select Sample Benchmark Proof URL for Testing:</span>
             </label>
             <div className="space-y-2">
               {SAMPLE_BENCHMARK_PROOFS.map((sample, idx) => {
@@ -135,22 +133,22 @@ export const SubmitProof: React.FC<SubmitProofProps> = ({
                     key={idx}
                     type="button"
                     onClick={() => handleSelectSample(sample.url)}
-                    className={`w-full p-3 rounded-xl border text-left transition-all text-xs font-mono flex items-start justify-between gap-3 ${
+                    className={`w-full p-2.5 rounded-lg border text-left transition-all text-xs font-mono flex items-start justify-between gap-3 ${
                       isSelected
-                        ? 'bg-[#00F0FF]/10 border-[#00F0FF] text-white shadow-quantum-cyan'
-                        : 'bg-[#0C1425] border-[#223456] text-obsidian-300 hover:border-obsidian-500'
+                        ? 'bg-blue-600/10 border-blue-500 text-white'
+                        : 'bg-gray-950 border-gray-800 text-gray-300 hover:border-gray-700'
                     }`}
                   >
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-white">{sample.title}</span>
-                        <span className={`text-[9px] px-2 py-0.5 rounded-full border ${sample.badgeColor} font-semibold`}>
+                        <span className="font-semibold text-white">{sample.title}</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded border ${sample.badgeColor} font-medium`}>
                           {sample.badge}
                         </span>
                       </div>
-                      <div className="text-[11px] text-obsidian-400 mt-1">{sample.desc}</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">{sample.desc}</div>
                     </div>
-                    {isSelected && <Check className="w-4 h-4 text-[#00F0FF] flex-shrink-0 mt-1" />}
+                    {isSelected && <Check className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />}
                   </button>
                 );
               })}
@@ -159,16 +157,16 @@ export const SubmitProof: React.FC<SubmitProofProps> = ({
 
           {/* Benchmark Log URL Input & Inspector */}
           <div>
-            <div className="flex items-center justify-between text-xs font-mono uppercase text-slate-300 mb-1.5">
+            <div className="flex items-center justify-between text-xs font-mono uppercase text-gray-300 mb-1.5">
               <span className="flex items-center gap-1">
-                <LinkIcon className="w-3.5 h-3.5 text-[#00F0FF]" />
+                <LinkIcon className="w-3.5 h-3.5 text-blue-400" />
                 <span>Live Benchmark Diagnostic Log URL</span>
               </span>
               <button
                 type="button"
                 onClick={handleFetchPreview}
                 disabled={!logUrl || isPreviewing}
-                className="text-[11px] text-[#00F0FF] hover:underline flex items-center gap-1 disabled:opacity-50"
+                className="text-[11px] text-blue-400 hover:underline flex items-center gap-1 disabled:opacity-50"
               >
                 {isPreviewing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Eye className="w-3 h-3" />}
                 <span>Preview Raw Log</span>
@@ -180,63 +178,63 @@ export const SubmitProof: React.FC<SubmitProofProps> = ({
               value={logUrl}
               onChange={(e) => setLogUrl(e.target.value)}
               placeholder="https://gist.githubusercontent.com/.../raw/benchmark.txt"
-              className="w-full px-3.5 py-2.5 rounded-xl bg-[#04070D] border border-[#223456] text-white focus:outline-none focus:border-[#00F0FF] font-mono text-xs"
+              className="w-full px-3.5 py-2 rounded-lg bg-gray-950 border border-gray-800 text-white focus:outline-none focus:border-blue-500 font-mono text-xs"
               required
             />
             
-            <p className="text-[11px] text-obsidian-400 mt-1">
-              GenLayer intelligent contract will render and inspect this URL directly on-chain using <code className="text-[#00F0FF]">gl.nondet.web.render</code>.
+            <p className="text-[11px] text-gray-400 mt-1">
+              GenLayer intelligent contract will render this log on-chain using <code className="text-blue-400">gl.nondet.web.render</code>.
             </p>
           </div>
 
           {/* Raw Log Preview Window */}
           {previewContent && (
-            <div className="p-3.5 rounded-xl bg-[#04070D] border border-[#223456] font-mono text-[11px]">
-              <div className="flex items-center justify-between text-obsidian-400 mb-2 border-b border-[#192642] pb-1.5">
-                <span className="flex items-center gap-1.5 text-[#00F0FF]">
+            <div className="p-3 rounded-lg bg-gray-950 border border-gray-800 font-mono text-[11px]">
+              <div className="flex items-center justify-between text-gray-400 mb-2 border-b border-gray-800 pb-1.5">
+                <span className="flex items-center gap-1 text-blue-400">
                   <Terminal className="w-3.5 h-3.5" />
                   <span>Telemetry Log Preview</span>
                 </span>
                 <span className="text-[10px]">First 1500 bytes</span>
               </div>
-              <pre className="text-slate-300 whitespace-pre-wrap max-h-48 overflow-y-auto leading-relaxed">
+              <pre className="text-gray-300 whitespace-pre-wrap max-h-40 overflow-y-auto leading-relaxed">
                 {previewContent}
               </pre>
             </div>
           )}
 
           {previewError && (
-            <div className="p-3 rounded-lg bg-obsidian-850 border border-amber-700/60 text-amber-300 text-xs font-mono">
+            <div className="p-2.5 rounded bg-gray-950 border border-amber-800 text-amber-300 text-xs font-mono">
               {previewError}
             </div>
           )}
 
           {/* Error Notice */}
           {errorMsg && (
-            <div className="p-3.5 rounded-xl bg-rose-950/80 border border-rose-700/80 text-rose-300 text-xs font-mono flex items-start gap-2">
+            <div className="p-3 rounded-lg bg-red-950/80 border border-red-800 text-red-300 text-xs font-mono flex items-start gap-2">
               <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
               <span>{errorMsg}</span>
             </div>
           )}
 
           {/* Modal Actions */}
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#223456]">
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-gray-800">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-[#04070D] hover:bg-[#121D33] text-obsidian-300 font-mono text-xs transition-colors"
+              className="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-sans text-xs transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting || !logUrl}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white font-mono text-xs font-bold shadow-quantum-emerald transition-all disabled:opacity-50"
+              className="flex items-center gap-2 px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-sans text-xs font-semibold shadow-sm transition-colors disabled:opacity-50"
             >
               {isSubmitting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Submitting to Studionet...</span>
+                  <span>Submitting to Chain...</span>
                 </>
               ) : (
                 <span>Claim Lease & Submit Benchmark</span>

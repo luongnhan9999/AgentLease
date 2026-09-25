@@ -1,4 +1,4 @@
-// Upgraded Utility and telemetry helpers for AgentLease
+// Utility and telemetry helpers for AgentLease (RunPod / Cloud Console Theme)
 
 export interface LeaseOrderData {
   lease_id: string;
@@ -57,38 +57,48 @@ export function parseGenToWei(genStr: string): bigint {
   }
 }
 
-// Extract GPU specifications from text
+// Parse GPU specs for cloud-style chips
 export function parseGpuSpecs(spec: string) {
   const upper = spec.toUpperCase();
-  let model = 'Generic AI Accelerator';
-  let vram = 'Unknown';
-  let tflops = 'Standard';
+  let model = 'Custom GPU Instance';
+  let vram = 'Unknown VRAM';
+  let tflops = 'Standard Compute';
+  let memoryType = 'GDDR';
 
   if (upper.includes('H100')) {
-    model = 'NVIDIA H100 SXM5';
-    vram = '80 GB HBM3';
-    tflops = '>950 TFLOPS';
+    model = '1x NVIDIA H100 SXM5';
+    vram = '80 GB';
+    memoryType = 'HBM3';
+    tflops = '950 TFLOPS';
   } else if (upper.includes('A100')) {
-    model = 'NVIDIA A100 Tensor';
-    vram = '80 GB HBM2e';
-    tflops = '>312 TFLOPS';
+    model = '1x NVIDIA A100 Tensor';
+    vram = '80 GB';
+    memoryType = 'HBM2e';
+    tflops = '312 TFLOPS';
   } else if (upper.includes('4090')) {
-    model = upper.includes('8X') ? '8x RTX 4090' : 'RTX 4090';
-    vram = upper.includes('8X') ? '192 GB GDDR6X' : '24 GB GDDR6X';
-    tflops = '>660 TFLOPS';
+    if (upper.includes('8X')) {
+      model = '8x NVIDIA RTX 4090';
+      vram = '192 GB';
+      tflops = '660 TFLOPS';
+    } else {
+      model = '1x NVIDIA RTX 4090';
+      vram = '24 GB';
+      tflops = '82.6 TFLOPS';
+    }
+    memoryType = 'GDDR6X';
   } else if (upper.includes('L40S')) {
-    model = 'NVIDIA L40S';
-    vram = '48 GB GDDR6';
-    tflops = '>733 TFLOPS';
+    model = '1x NVIDIA L40S';
+    vram = '48 GB';
+    memoryType = 'GDDR6';
+    tflops = '733 TFLOPS';
   }
 
-  // Regex fallback for VRAM
   const vramMatch = spec.match(/(\d+)\s*(?:GB|GiB)/i);
-  if (vramMatch && vram === 'Unknown') {
+  if (vramMatch && vram === 'Unknown VRAM') {
     vram = `${vramMatch[1]} GB`;
   }
 
-  return { model, vram, tflops };
+  return { model, vram, memoryType, tflops };
 }
 
 export interface StatusMeta {
@@ -96,8 +106,7 @@ export interface StatusMeta {
   badgeBg: string;
   badgeText: string;
   borderColor: string;
-  glowClass: string;
-  indicatorColor: string;
+  dotColor: string;
   description: string;
 }
 
@@ -105,119 +114,122 @@ export function getStatusMeta(status: number): StatusMeta {
   switch (status) {
     case 0:
       return {
-        label: 'OPEN FOR HOST CLAIM',
-        badgeBg: 'bg-cyan-950/70',
-        badgeText: 'text-[#00F0FF]',
-        borderColor: 'border-cyan-500/40',
-        glowClass: 'shadow-quantum-cyan',
-        indicatorColor: 'bg-[#00F0FF]',
-        description: 'GEN Escrow locked on-chain. Waiting for GPU node provider to submit live benchmark proof.',
+        label: 'Available for Rent',
+        badgeBg: 'bg-blue-500/10',
+        badgeText: 'text-blue-400',
+        borderColor: 'border-blue-500/30',
+        dotColor: 'bg-blue-400',
+        description: 'Escrow locked in contract. GPU Node Providers can claim and submit benchmark logs.',
       };
     case 1:
       return {
-        label: 'ACTIVE AI JURY AUDIT',
-        badgeBg: 'bg-amber-950/70',
+        label: 'Verifying Hardware SLA',
+        badgeBg: 'bg-amber-500/10',
         badgeText: 'text-amber-400',
-        borderColor: 'border-amber-500/50',
-        glowClass: 'shadow-[0_0_20px_-3px_rgba(245,158,11,0.3)]',
-        indicatorColor: 'bg-amber-400',
-        description: 'Hardware proof submitted. GenLayer AI validators inspecting benchmark logs on-chain.',
+        borderColor: 'border-amber-500/30',
+        dotColor: 'bg-amber-400',
+        description: 'Benchmark proof submitted. GenLayer AI validators are auditing hardware logs on-chain.',
       };
     case 2:
       return {
-        label: 'VERIFIED & SETTLED',
-        badgeBg: 'bg-emerald-950/70',
+        label: 'Active & Verified',
+        badgeBg: 'bg-emerald-500/10',
         badgeText: 'text-emerald-400',
-        borderColor: 'border-emerald-500/50',
-        glowClass: 'shadow-quantum-emerald',
-        indicatorColor: 'bg-emerald-400',
-        description: 'Hardware benchmark meets SLA. Rental escrow automatically disbursed to Host.',
+        borderColor: 'border-emerald-500/30',
+        dotColor: 'bg-emerald-400',
+        description: 'Hardware verified. Rental payment disbursed to host automatically.',
       };
     case 3:
       return {
-        label: 'FRAUD DISCOVERED - REFUNDED',
-        badgeBg: 'bg-rose-950/70',
-        badgeText: 'text-rose-400',
-        borderColor: 'border-rose-500/50',
-        glowClass: 'shadow-quantum-rose',
-        indicatorColor: 'bg-rose-400',
-        description: 'Hardware spoofing or throttling identified by AI Jury. Full refund executed to Renter.',
+        label: 'SLA Failed / Refunded',
+        badgeBg: 'bg-red-500/10',
+        badgeText: 'text-red-400',
+        borderColor: 'border-red-500/30',
+        dotColor: 'bg-red-400',
+        description: 'Hardware mismatch or throttling detected. Escrow refunded to renter.',
       };
     case 4:
       return {
-        label: 'CANCELLED & RECLAIMED',
-        badgeBg: 'bg-slate-900/80',
-        badgeText: 'text-slate-400',
-        borderColor: 'border-slate-700',
-        glowClass: '',
-        indicatorColor: 'bg-slate-500',
-        description: 'Lease order cancelled. Funds returned to Renter on-chain.',
+        label: 'Cancelled',
+        badgeBg: 'bg-gray-800',
+        badgeText: 'text-gray-400',
+        borderColor: 'border-gray-700',
+        dotColor: 'bg-gray-400',
+        description: 'Lease cancelled and funds reclaimed by renter.',
       };
     default:
       return {
-        label: 'UNKNOWN STATE',
-        badgeBg: 'bg-slate-900',
-        badgeText: 'text-slate-400',
-        borderColor: 'border-slate-800',
-        glowClass: '',
-        indicatorColor: 'bg-slate-500',
-        description: 'Unrecognized compute lease state.',
+        label: 'Unknown',
+        badgeBg: 'bg-gray-800',
+        badgeText: 'text-gray-400',
+        borderColor: 'border-gray-700',
+        dotColor: 'bg-gray-400',
+        description: 'Unrecognized lease state.',
       };
   }
 }
 
-// Preset Hardware Specifications for Fast Ordering
+// Preset Hardware Instances (RunPod / Cloud Style)
 export const GPU_SLA_PRESETS = [
   {
-    name: 'NVIDIA H100 80GB SXM5 (Ultra-Scale LLM)',
-    spec: 'NVIDIA H100 80GB SXM5, 80GB HBM3 VRAM, min 950 TFLOPS (FP16), PCIe 5.0 x16, NVLink 900GB/s',
+    name: '1x NVIDIA H100 SXM5',
+    spec: '1x NVIDIA H100 80GB SXM5, 80GB HBM3 VRAM, min 950 TFLOPS (FP16), PCIe 5.0, NVLink 900GB/s',
     recommendedEscrow: '5.0',
     durationBlocks: 5000,
     vram: '80 GB',
+    memoryType: 'HBM3',
     tflops: '950 TFLOPS',
-    category: 'Enterprise Cluster',
+    vCpu: '16 vCPU',
+    ram: '128 GB RAM',
+    category: 'Enterprise Training',
   },
   {
-    name: 'NVIDIA A100 80GB Tensor Core (Fine-Tuning)',
-    spec: 'NVIDIA A100-SXM4-80GB, 80GB HBM2e VRAM, min 312 TFLOPS (Tensor FP16), InfiniBand 200Gb/s',
+    name: '1x NVIDIA A100-SXM4',
+    spec: '1x NVIDIA A100-SXM4-80GB, 80GB HBM2e VRAM, min 312 TFLOPS (Tensor FP16), InfiniBand 200Gb/s',
     recommendedEscrow: '2.5',
     durationBlocks: 3500,
     vram: '80 GB',
+    memoryType: 'HBM2e',
     tflops: '312 TFLOPS',
-    category: 'Enterprise Cluster',
+    vCpu: '12 vCPU',
+    ram: '85 GB RAM',
+    category: 'LLM Fine-Tuning',
   },
   {
-    name: '8x NVIDIA RTX 4090 24GB (Distributed Inference)',
+    name: '8x NVIDIA RTX 4090',
     spec: '8x NVIDIA GeForce RTX 4090, 192GB Total GDDR6X VRAM, min 660 TFLOPS, CUDA 12.2, 10GbE Network',
     recommendedEscrow: '1.8',
     durationBlocks: 2000,
     vram: '192 GB',
+    memoryType: 'GDDR6X',
     tflops: '660 TFLOPS',
-    category: 'DePIN Compute',
+    vCpu: '32 vCPU',
+    ram: '256 GB RAM',
+    category: 'Distributed Inference',
   },
 ];
 
-// Sample Benchmark Log URLs for Live Testing on Studionet
+// Sample Benchmark URLs for Host testing
 export const SAMPLE_BENCHMARK_PROOFS = [
   {
-    title: 'Authentic NVIDIA H100 80GB SXM5 Benchmark Log',
+    title: 'Authentic NVIDIA H100 80GB Benchmark Log',
     url: 'https://raw.githubusercontent.com/yeou/public-logs/main/h100_valid_benchmark.txt',
-    desc: 'Passes all SLA metrics: 81920 MiB VRAM, 989 TFLOPS FP16, zero ECC errors.',
-    badge: 'PASSES SLA',
-    badgeColor: 'text-emerald-400 bg-emerald-950/80 border-emerald-700',
+    desc: 'Passes all SLA metrics: 81920 MiB VRAM, 989 TFLOPS FP16, zero throttling.',
+    badge: 'Passes SLA',
+    badgeColor: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
   },
   {
     title: 'Spoofed Low-End GPU (GTX 1060 Fraud)',
     url: 'https://raw.githubusercontent.com/yeou/public-logs/main/gtx1060_fraud_benchmark.txt',
-    desc: 'Fraudulent node provider attempting to claim H100 escrow with a 6GB GTX 1060 card.',
-    badge: 'SPOOF DETECTED',
-    badgeColor: 'text-rose-400 bg-rose-950/80 border-rose-700',
+    desc: 'Host claims H100 with a 6GB GTX 1060 consumer card.',
+    badge: 'Fraud Detected',
+    badgeColor: 'text-red-400 bg-red-500/10 border-red-500/30',
   },
   {
     title: 'Thermal Throttling & Degraded Memory Bandwidth Log',
     url: 'https://raw.githubusercontent.com/yeou/public-logs/main/throttled_gpu_log.txt',
-    desc: 'Degraded memory throughput and thermal throttling violating SLA minimums.',
-    badge: 'THROTTLED',
-    badgeColor: 'text-amber-400 bg-amber-950/80 border-amber-700',
+    desc: 'Severe thermal throttling and degraded memory throughput.',
+    badge: 'Throttled',
+    badgeColor: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
   },
 ];
