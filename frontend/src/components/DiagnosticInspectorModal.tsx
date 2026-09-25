@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, ShieldCheck, ShieldAlert, Cpu, Zap, ExternalLink, Terminal, Loader2, Gauge, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { X, ShieldCheck, ShieldAlert, Cpu, Zap, ExternalLink, Terminal, Loader2, Gauge, CheckCircle2, AlertTriangle, Scale, Clock } from 'lucide-react';
 import { LeaseOrderData, formatGen, shortenAddress, getStatusMeta } from '../utils/helpers';
 import { executeContractWrite, STUDIONET_EXPLORER } from '../config/genlayer';
 
@@ -23,8 +23,15 @@ export const DiagnosticInspectorModal: React.FC<DiagnosticInspectorModalProps> =
 
   const statusMeta = getStatusMeta(lease.status);
   const isVerified = lease.verdict === 'HARDWARE_VERIFIED';
+  const isDegraded = lease.verdict === 'HARDWARE_DEGRADED' || lease.status === 5;
   const isFraud = lease.verdict === 'HARDWARE_FRAUDULENT';
+  const isDisputed = lease.status === 6;
+  const isAuditCompleted = lease.status === 7;
   const isAwaitingAudit = lease.status === 1;
+
+  const escrowVal = BigInt(lease.escrow_amount || '0');
+  const hostDegradedShare = (escrowVal * 60n) / 100n;
+  const renterDegradedRefund = escrowVal - hostDegradedShare;
 
   const handleTriggerAdjudication = async () => {
     setActionError(null);
@@ -50,10 +57,12 @@ export const DiagnosticInspectorModal: React.FC<DiagnosticInspectorModalProps> =
           <div className="flex items-center gap-3">
             <div className={`p-2 rounded-xl border ${
               isVerified ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' :
+              isDegraded ? 'bg-purple-500/10 border-purple-500/30 text-purple-400' :
               isFraud ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' :
               'bg-[#F5D061]/10 border-[#F5D061]/30 text-[#F5D061]'
             }`}>
               {isVerified ? <ShieldCheck className="w-5 h-5" /> :
+               isDegraded ? <Scale className="w-5 h-5" /> :
                isFraud ? <ShieldAlert className="w-5 h-5" /> :
                <Cpu className="w-5 h-5" />}
             </div>
@@ -81,7 +90,9 @@ export const DiagnosticInspectorModal: React.FC<DiagnosticInspectorModalProps> =
           {/* Verdict Banner */}
           <div className={`p-4 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
             isVerified ? 'bg-emerald-950/40 border-emerald-800' :
+            isDegraded ? 'bg-purple-950/40 border-purple-800' :
             isFraud ? 'bg-rose-950/40 border-rose-800' :
+            isDisputed ? 'bg-red-950/40 border-red-800' :
             'bg-[#0A0B0E] border-[#2C261C]'
           }`}>
             <div>
@@ -90,8 +101,13 @@ export const DiagnosticInspectorModal: React.FC<DiagnosticInspectorModalProps> =
               </span>
               <div className="text-base font-bold flex items-center gap-2 font-mono">
                 {isVerified && <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
+                {isDegraded && <Scale className="w-5 h-5 text-purple-400" />}
                 {isFraud && <AlertTriangle className="w-5 h-5 text-rose-400" />}
-                <span className={isVerified ? 'text-emerald-300' : isFraud ? 'text-rose-300' : 'text-[#F5D061]'}>
+                <span className={
+                  isVerified ? 'text-emerald-300' :
+                  isDegraded ? 'text-purple-300' :
+                  isFraud ? 'text-rose-300' : 'text-[#F5D061]'
+                }>
                   {lease.verdict}
                 </span>
               </div>
@@ -102,7 +118,8 @@ export const DiagnosticInspectorModal: React.FC<DiagnosticInspectorModalProps> =
               <div className="text-right">
                 <span className="text-[10px] text-luxury-sandDark block uppercase">SLA Score</span>
                 <span className={`text-xl font-bold font-mono ${
-                  lease.performance_score >= 70 ? 'text-emerald-400' : 'text-rose-400'
+                  lease.performance_score >= 80 ? 'text-emerald-400' :
+                  lease.performance_score >= 55 ? 'text-purple-400' : 'text-rose-400'
                 }`}>
                   {lease.performance_score}<span className="text-xs text-luxury-sandDark">/100</span>
                 </span>
@@ -115,6 +132,58 @@ export const DiagnosticInspectorModal: React.FC<DiagnosticInspectorModalProps> =
               </div>
             </div>
           </div>
+
+          {/* Canary Token Security Seal */}
+          <div className="p-2.5 rounded-xl bg-[#0A0B0E] border border-[#2C261C] flex items-center justify-between text-[11px] font-mono">
+            <span className="text-luxury-sandDark flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Steward Anti-Injection Shield:</span>
+            </span>
+            <span className="text-emerald-400 font-bold bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-800/60">
+              CANARY_AGENT_LEASE_V2 TAMPER-PROOF
+            </span>
+          </div>
+
+          {/* Degraded 60/40 Split Card */}
+          {isDegraded && (
+            <div className="p-3.5 rounded-xl bg-purple-950/30 border border-purple-800/60 text-xs font-mono text-purple-200">
+              <div className="font-bold text-purple-300 mb-1.5 flex items-center gap-1.5">
+                <Scale className="w-4 h-4 text-purple-400" />
+                <span>Partial Hardware SLA Resolution (60/40 Ratio)</span>
+              </div>
+              <div className="flex justify-between text-[11px] pt-1 border-t border-purple-900/50">
+                <span className="text-luxury-sandDark">Host Payout (60%): <strong className="text-purple-300 font-mono">{formatGen(hostDegradedShare.toString())}</strong></span>
+                <span className="text-luxury-sandDark">Renter Refund (40%): <strong className="text-[#F5D061] font-mono">{formatGen(renterDegradedRefund.toString())}</strong></span>
+              </div>
+            </div>
+          )}
+
+          {/* Disputed High Court Card */}
+          {isDisputed && (
+            <div className="p-3.5 rounded-xl bg-red-950/30 border border-red-800 text-xs font-mono text-red-200 space-y-1">
+              <div className="font-bold text-red-300 flex items-center gap-1.5">
+                <Scale className="w-4 h-4 text-red-400" />
+                <span>Supreme Court Appeal In Session</span>
+              </div>
+              <div className="text-[11px] text-luxury-sandDark flex justify-between">
+                <span>Appellant: <span className="text-white">{shortenAddress(lease.dispute_initiator || '')}</span></span>
+                <span>Bond Staked: <span className="text-[#F5D061] font-bold">{formatGen(lease.dispute_bond || '0')}</span></span>
+              </div>
+            </div>
+          )}
+
+          {/* Audit Completed Appeal Window Notice */}
+          {isAuditCompleted && (
+            <div className="p-3.5 rounded-xl bg-yellow-950/30 border border-yellow-800/60 text-xs font-mono text-yellow-200 space-y-1">
+              <div className="font-bold text-yellow-300 flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-yellow-400 animate-pulse" />
+                <span>Appeal Challenge Window (30 Blocks Active)</span>
+              </div>
+              <div className="text-[11px] text-luxury-sandDark leading-relaxed">
+                Initial verdict delivered. Renter or Host may file a formal dispute with 10% staked bond before final settlement is disbursed.
+              </div>
+            </div>
+          )}
 
           {/* Compliance Progress Bar */}
           <div>

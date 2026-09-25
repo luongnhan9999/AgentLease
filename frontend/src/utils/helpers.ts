@@ -4,16 +4,20 @@ export interface LeaseOrderData {
   lease_id: string;
   renter: string;
   host: string;
+  dispute_initiator?: string;
   escrow_amount: string;
+  dispute_bond?: string;
   hardware_spec: string;
   benchmark_log_url: string;
-  status: number; // 0: OPEN, 1: IN_AUDIT, 2: SETTLED_PAID, 3: FRAUD_REFUNDED, 4: CANCELLED
+  status: number; // 0: OPEN, 1: IN_AUDIT, 2: SETTLED_PAID, 3: FRAUD_REFUNDED, 4: CANCELLED, 5: SETTLED_PARTIAL, 6: DISPUTED, 7: AUDIT_COMPLETED
   verdict: string;
   reason: string;
   confidence: number;
   performance_score: number;
   created_at_block: string;
   expires_at_block: string;
+  audit_started_block?: string;
+  audit_completed_block?: string;
 }
 
 export interface ClusterStats {
@@ -156,6 +160,33 @@ export function getStatusMeta(status: number): StatusMeta {
         borderColor: 'border-gray-700',
         dotColor: 'bg-gray-400',
         description: 'Lease order cancelled. Funds returned to renter vault on-chain.',
+      };
+    case 5:
+      return {
+        label: 'Degraded SLA / Partial Payout',
+        badgeBg: 'bg-purple-500/10',
+        badgeText: 'text-purple-400',
+        borderColor: 'border-purple-500/40',
+        dotColor: 'bg-purple-400',
+        description: 'Partial Hardware SLA verified (score 55-79). 60% paid to Host, 40% refunded to Renter.',
+      };
+    case 6:
+      return {
+        label: 'In High Court Dispute',
+        badgeBg: 'bg-red-500/10',
+        badgeText: 'text-red-400',
+        borderColor: 'border-red-500/40',
+        dotColor: 'bg-red-400',
+        description: 'Verdict contested with staked bond. High Court AI Jury review in progress.',
+      };
+    case 7:
+      return {
+        label: 'Audit Completed (Appeal Window)',
+        badgeBg: 'bg-yellow-500/10',
+        badgeText: 'text-yellow-400',
+        borderColor: 'border-yellow-500/40',
+        dotColor: 'bg-yellow-400',
+        description: 'Initial verdict reached. 30-block cooling-off challenge window active.',
       };
     default:
       return {

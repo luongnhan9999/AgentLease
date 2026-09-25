@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HardDrive, AlertTriangle, ShieldCheck, Zap, ArrowRight, RotateCcw, Loader2, Gauge, Microchip, Clock } from 'lucide-react';
+import { HardDrive, AlertTriangle, ShieldCheck, Zap, ArrowRight, RotateCcw, Loader2, Gauge, Microchip, Clock, Scale, CheckCheck } from 'lucide-react';
 import { LeaseOrderData, formatGen, shortenAddress, getStatusMeta, parseGpuSpecs } from '../utils/helpers';
 import { executeContractWrite } from '../config/genlayer';
 
@@ -8,6 +8,7 @@ interface LeaseCardProps {
   currentUser: string | null;
   onSubmitProof: (lease: LeaseOrderData) => void;
   onInspectDiagnostics: (lease: LeaseOrderData) => void;
+  onOpenAppeal?: (lease: LeaseOrderData) => void;
   onRefresh: () => void;
 }
 
@@ -16,9 +17,12 @@ export const LeaseCard: React.FC<LeaseCardProps> = ({
   currentUser,
   onSubmitProof,
   onInspectDiagnostics,
+  onOpenAppeal,
   onRefresh,
 }) => {
   const [isAdjudicating, setIsAdjudicating] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
+  const [isAppealingAdjudication, setIsAppealingAdjudication] = useState(false);
   const [isReclaiming, setIsReclaiming] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -38,6 +42,34 @@ export const LeaseCard: React.FC<LeaseCardProps> = ({
       setActionError(err.message || 'Adjudication failed');
     } finally {
       setIsAdjudicating(false);
+    }
+  };
+
+  const handleFinalize = async () => {
+    setActionError(null);
+    try {
+      setIsFinalizing(true);
+      await executeContractWrite('finalize_settlement', [lease.lease_id]);
+      onRefresh();
+    } catch (err: any) {
+      console.error('Finalize error:', err);
+      setActionError(err.message || 'Cannot finalize settlement yet. Challenge window (30 blocks) may still be active.');
+    } finally {
+      setIsFinalizing(false);
+    }
+  };
+
+  const handleAdjudicateAppeal = async () => {
+    setActionError(null);
+    try {
+      setIsAppealingAdjudication(true);
+      await executeContractWrite('adjudicate_appeal', [lease.lease_id]);
+      onRefresh();
+    } catch (err: any) {
+      console.error('Adjudicate appeal error:', err);
+      setActionError(err.message || 'Supreme AI Jury appeal adjudication failed.');
+    } finally {
+      setIsAppealingAdjudication(false);
     }
   };
 
@@ -230,13 +262,76 @@ export const LeaseCard: React.FC<LeaseCardProps> = ({
           </div>
         )}
 
-        {/* Status 2, 3, 4: Adjudicated / Settled / Cancelled */}
-        {(lease.status === 2 || lease.status === 3 || lease.status === 4) && (
+        {/* Status 7: AUDIT_COMPLETED - Finalize Payout or Appeal (10% Bond) */}
+        {lease.status === 7 && (
+          <div className="w-full flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleFinalize}
+                disabled={isFinalizing}
+                className="btn-gold flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-sans tracking-wide"
+              >
+                {isFinalizing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCheck className="w-3.5 h-3.5" />}
+                <span>Finalize Payout</span>
+              </button>
+              {(isRenter || isHost) && onOpenAppeal && (
+                <button
+                  onClick={() => onOpenAppeal(lease)}
+                  className="px-3 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-mono flex items-center gap-1.5 transition-colors"
+                  title="Contest verdict with 10% staked bond"
+                >
+                  <Scale className="w-3.5 h-3.5" />
+                  <span>Appeal (10% Bond)</span>
+                </button>
+              )}
+            </div>
+            <button
+              onClick={() => onInspectDiagnostics(lease)}
+              className="w-full py-1.5 rounded-lg bg-[#0A0B0E] hover:bg-[#1C1E26] text-luxury-sand text-[11px] font-mono border border-[#2C261C] flex items-center justify-center gap-1.5"
+            >
+              <Gauge className="w-3.5 h-3.5 text-[#F5D061]" />
+              <span>Inspect Jury Verdict & Challenge Window</span>
+            </button>
+          </div>
+        )}
+
+        {/* Status 6: DISPUTED - High Court AI Jury Deliberation */}
+        {lease.status === 6 && (
+          <div className="w-full flex items-center gap-2">
+            <button
+              onClick={handleAdjudicateAppeal}
+              disabled={isAppealingAdjudication}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-red-600 via-amber-600 to-yellow-500 hover:opacity-90 text-black font-sans text-xs font-bold shadow-gold-sm transition-all disabled:opacity-50"
+            >
+              {isAppealingAdjudication ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Supreme Court Deliberating...</span>
+                </>
+              ) : (
+                <>
+                  <Scale className="w-3.5 h-3.5" />
+                  <span>Adjudicate High Court Appeal</span>
+                </>
+              )}
+            </button>
+            <button
+              onClick={() => onInspectDiagnostics(lease)}
+              className="p-2.5 rounded-xl bg-[#0A0B0E] hover:bg-[#1C1E26] text-[#F5D061] border border-[#2C261C] transition-colors"
+              title="Inspect Dispute Bond"
+            >
+              <Gauge className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Status 2, 3, 4, 5: Adjudicated / Settled / Partial / Cancelled */}
+        {(lease.status === 2 || lease.status === 3 || lease.status === 4 || lease.status === 5) && (
           <button
             onClick={() => onInspectDiagnostics(lease)}
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#0A0B0E] hover:bg-[#1C1E26] text-[#F5D061] border border-[#2C261C] hover:border-[#F5D061]/50 font-sans text-xs font-bold transition-all"
           >
-            <span>View Forensic Diagnostics</span>
+            <span>View Forensic Diagnostics & Settlement</span>
             <ArrowRight className="w-3.5 h-3.5 text-[#F5D061]" />
           </button>
         )}

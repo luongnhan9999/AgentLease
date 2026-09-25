@@ -93,26 +93,61 @@ class MockGenLayerEnv:
         def _exec_prompt(prompt, response_format="json"):
             if self.exec_prompt_override:
                 return self.exec_prompt_override(prompt, response_format)
-            # Default mock LLM evaluation
-            if "NVIDIA H100" in prompt and "81920 MiB" in prompt:
+            canary = "CANARY_AGENT_LEASE_V2"
+            
+            import re
+            data_match = re.search(r"<benchmark_data>(.*?)</benchmark_data>", prompt, re.DOTALL)
+            bench_data = data_match.group(1).lower() if data_match else prompt.lower()
+            
+            # Appeal prompt check
+            if "Supreme Magistrate" in prompt:
+                if "1060" in bench_data or "severe thermal" in bench_data:
+                    return {
+                        "canary": canary,
+                        "verdict": "APPEAL_REJECTED",
+                        "confidence": 95,
+                        "performance_score": 10,
+                        "reason": "Appeal dismissed: Hardware benchmark is fraudulent or sub-par."
+                    }
+                elif "degraded" in bench_data or "700 tflops" in bench_data:
+                    return {
+                        "canary": canary,
+                        "verdict": "APPEAL_UPHELD_DEGRADED",
+                        "confidence": 92,
+                        "performance_score": 68,
+                        "reason": "Appeal partially upheld: Hardware operating in degraded capacity."
+                    }
                 return {
-                    "verdict": "HARDWARE_VERIFIED",
+                    "canary": canary,
+                    "verdict": "APPEAL_UPHELD_VERIFIED",
                     "confidence": 98,
-                    "performance_score": 95,
-                    "reason": "Authentic NVIDIA H100 80GB SXM5 verified. Benchmark throughput at 989 TFLOPS satisfies requirements."
+                    "performance_score": 92,
+                    "reason": "Appeal upheld: Verified hardware authenticated."
                 }
-            elif "GTX 1060" in prompt or "throttling" in prompt.lower() or "404" in prompt:
+
+            # Standard Adjudication prompt check
+            if "1060" in bench_data or "severe thermal" in bench_data or "404" in bench_data:
                 return {
+                    "canary": canary,
                     "verdict": "HARDWARE_FRAUDULENT",
                     "confidence": 99,
                     "performance_score": 15,
                     "reason": "Hardware mismatch detected. Host provided low-tier consumer GPU failing enterprise SLA requirements."
                 }
+            elif "degraded" in bench_data or "700 tflops" in bench_data:
+                return {
+                    "canary": canary,
+                    "verdict": "HARDWARE_DEGRADED",
+                    "confidence": 92,
+                    "performance_score": 68,
+                    "reason": "Hardware partially compliant: 72GB VRAM available and 710 TFLOPS measured."
+                }
             return {
+                "canary": canary,
                 "verdict": "HARDWARE_VERIFIED",
-                "confidence": 90,
-                "performance_score": 88,
-                "reason": "Hardware specifications and synthetic benchmark logs validated successfully."
+                "confidence": 98,
+                "performance_score": 95,
+                "reason": "Authentic NVIDIA H100 80GB SXM5 verified. Benchmark throughput at 989 TFLOPS satisfies requirements."
             }
 
         self.nondet.exec_prompt = _exec_prompt

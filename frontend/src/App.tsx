@@ -5,6 +5,7 @@ import { LeaseCard } from './components/LeaseCard';
 import { CreateLease } from './components/CreateLease';
 import { SubmitProof } from './components/SubmitProof';
 import { DiagnosticInspectorModal } from './components/DiagnosticInspectorModal';
+import { AppealModal } from './components/AppealModal';
 import { Plus, Search, Server, Terminal, Radio, Shield, LayoutGrid, List, AlertCircle, Coins } from 'lucide-react';
 import { LeaseOrderData, ClusterStats, shortenAddress, formatGen, getStatusMeta, parseGpuSpecs } from './utils/helpers';
 import {
@@ -40,6 +41,7 @@ export const App: React.FC = () => {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [proofLease, setProofLease] = useState<LeaseOrderData | null>(null);
   const [diagnosticLease, setDiagnosticLease] = useState<LeaseOrderData | null>(null);
+  const [appealLease, setAppealLease] = useState<LeaseOrderData | null>(null);
 
   // Pure On-Chain Data Fetching (Zero Mocks)
   const fetchData = useCallback(async () => {
@@ -176,7 +178,9 @@ export const App: React.FC = () => {
     } else if (activeTab === 'IN_AUDIT') {
       if (l.status !== 1) return false;
     } else if (activeTab === 'SETTLED') {
-      if (l.status !== 2 && l.status !== 3) return false;
+      if (l.status !== 2 && l.status !== 3 && l.status !== 5) return false;
+    } else if (activeTab === 'APPEALS') {
+      if (l.status !== 6 && l.status !== 7) return false;
     }
 
     if (searchQuery.trim()) {
@@ -260,7 +264,8 @@ export const App: React.FC = () => {
               { id: 'ALL', label: `All Orders (${leases.length})` },
               { id: 'OPEN', label: 'Open for Claim' },
               { id: 'IN_AUDIT', label: 'In AI Audit' },
-              { id: 'SETTLED', label: 'Verified & Settled' },
+              { id: 'APPEALS', label: 'Appeals & Cooling Window' },
+              { id: 'SETTLED', label: 'Settled & Degraded' },
               { id: 'MY_RENTER', label: 'My Renter Orders' },
               { id: 'MY_HOST', label: 'My Host Claims' },
             ].map((tab) => (
@@ -333,6 +338,7 @@ export const App: React.FC = () => {
                   currentUser={account}
                   onSubmitProof={(l) => setProofLease(l)}
                   onInspectDiagnostics={(l) => setDiagnosticLease(l)}
+                  onOpenAppeal={(l) => setAppealLease(l)}
                   onRefresh={fetchData}
                 />
               ))}
@@ -356,6 +362,7 @@ export const App: React.FC = () => {
                     {filteredLeases.map((lease) => {
                       const statusMeta = getStatusMeta(lease.status);
                       const specs = parseGpuSpecs(lease.hardware_spec);
+                      const isParty = account && (lease.renter.toLowerCase() === account.toLowerCase() || lease.host.toLowerCase() === account.toLowerCase());
                       return (
                         <tr key={lease.lease_id} className="hover:bg-[#181A22] transition-colors">
                           <td className="px-5 py-3.5 font-bold text-[#F5D061] whitespace-nowrap">
@@ -400,6 +407,39 @@ export const App: React.FC = () => {
                                   className="px-3 py-1 rounded-lg bg-gradient-to-r from-amber-600 to-[#D99B26] hover:to-[#F5D061] text-black font-bold text-xs"
                                 >
                                   Audit SLA
+                                </button>
+                              )}
+                              {lease.status === 7 && (
+                                <>
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        await callContractView('finalize_settlement', [lease.lease_id]);
+                                        fetchData();
+                                      } catch (e) {
+                                        setDiagnosticLease(lease);
+                                      }
+                                    }}
+                                    className="btn-gold px-2.5 py-1 rounded-lg text-xs"
+                                  >
+                                    Finalize
+                                  </button>
+                                  {isParty && (
+                                    <button
+                                      onClick={() => setAppealLease(lease)}
+                                      className="px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/30 text-xs"
+                                    >
+                                      Appeal
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                              {lease.status === 6 && (
+                                <button
+                                  onClick={() => setDiagnosticLease(lease)}
+                                  className="px-2.5 py-1 rounded-lg bg-red-500/20 text-red-300 border border-red-500/40 text-xs font-bold"
+                                >
+                                  In Court
                                 </button>
                               )}
                               <button
@@ -499,6 +539,15 @@ export const App: React.FC = () => {
         onClose={() => setDiagnosticLease(null)}
         onAdjudicated={fetchData}
       />
+
+      {appealLease && (
+        <AppealModal
+          isOpen={Boolean(appealLease)}
+          lease={appealLease}
+          onClose={() => setAppealLease(null)}
+          onSuccess={fetchData}
+        />
+      )}
 
     </div>
   );
