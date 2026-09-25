@@ -56,93 +56,93 @@ export const LeaseCard: React.FC<LeaseCardProps> = ({
   };
 
   return (
-    <div className="rounded-xl bg-gray-900 border border-gray-800 p-5 hover:border-gray-700 transition-all flex flex-col justify-between shadow-sm">
+    <div className="fintech-card p-6 flex flex-col justify-between hover:-translate-y-1">
       
       {/* Top Header: Instance ID & Status Badge */}
       <div>
-        <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="flex items-center justify-between gap-2 mb-4">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-xs font-bold text-gray-200 bg-gray-800/80 px-2.5 py-1 rounded border border-gray-700">
+            <span className="font-mono text-xs font-bold text-[#F5D061] bg-[#0A0B0E] px-3 py-1 rounded-lg border border-[#383226]">
               {lease.lease_id}
             </span>
           </div>
           
-          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${statusMeta.badgeBg} ${statusMeta.badgeText} ${statusMeta.borderColor}`}>
+          <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${statusMeta.badgeBg} ${statusMeta.badgeText} ${statusMeta.borderColor}`}>
             <span className={`w-1.5 h-1.5 rounded-full ${statusMeta.dotColor}`}></span>
             <span>{statusMeta.label}</span>
           </div>
         </div>
 
-        {/* GPU Model & Price Title (RunPod Style) */}
-        <div className="mb-3">
+        {/* GPU Model & Price Title */}
+        <div className="mb-3.5">
           <div className="flex items-baseline justify-between gap-2">
             <h4 className="text-base font-bold text-white flex items-center gap-2">
-              <Microchip className="w-4 h-4 text-blue-400" />
+              <Microchip className="w-4 h-4 text-[#F5D061]" />
               <span>{parsedSpecs.model}</span>
             </h4>
-            <div className="text-sm font-bold font-mono text-blue-400">
+            <div className="text-base font-bold font-mono text-[#F5D061]">
               {formatGen(lease.escrow_amount)}
             </div>
           </div>
         </div>
 
         {/* Spec Badges Grid */}
-        <div className="flex flex-wrap items-center gap-1.5 mb-3.5">
-          <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-300 border border-gray-700">
-            VRAM: <span className="text-white font-medium">{parsedSpecs.vram}</span>
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-md bg-[#1C1E26] text-luxury-sand border border-[#383226]">
+            VRAM: <span className="text-[#F5D061] font-bold">{parsedSpecs.vram}</span>
           </span>
-          <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-300 border border-gray-700">
-            SLA: <span className="text-emerald-400 font-medium">{parsedSpecs.tflops}</span>
+          <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-md bg-[#1C1E26] text-luxury-sand border border-[#383226]">
+            SLA: <span className="text-emerald-400 font-bold">{parsedSpecs.tflops}</span>
           </span>
-          <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-300 border border-gray-700">
-            Memory: <span className="text-gray-200 font-medium">{parsedSpecs.memoryType}</span>
+          <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-md bg-[#1C1E26] text-luxury-sand border border-[#383226]">
+            Type: <span className="text-white font-medium">{parsedSpecs.memoryType}</span>
           </span>
         </div>
 
-        {/* Full Spec Note */}
-        <div className="p-3 rounded-lg bg-gray-950 border border-gray-800/80 mb-3 text-xs text-gray-400 font-mono line-clamp-2 leading-relaxed">
+        {/* Full Natural Language SLA Requirement */}
+        <div className="p-3.5 rounded-xl bg-[#0A0B0E] border border-[#2C261C] mb-4 text-xs text-luxury-sandDark font-mono line-clamp-2 leading-relaxed">
           {lease.hardware_spec}
         </div>
 
         {/* Diagnostic Snapshot (if adjudicated) */}
         {lease.verdict !== 'PENDING' && (
-          <div className={`p-2.5 rounded-lg border mb-3 text-xs font-mono flex items-center justify-between ${
+          <div className={`p-3 rounded-xl border mb-4 text-xs font-mono flex items-center justify-between ${
             lease.verdict === 'HARDWARE_VERIFIED'
               ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300'
-              : 'bg-red-950/40 border-red-800 text-red-300'
+              : 'bg-rose-950/40 border-rose-800 text-rose-300'
           }`}>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
               {lease.verdict === 'HARDWARE_VERIFIED' ? (
                 <ShieldCheck className="w-4 h-4 text-emerald-400" />
               ) : (
-                <AlertTriangle className="w-4 h-4 text-red-400" />
+                <AlertTriangle className="w-4 h-4 text-rose-400" />
               )}
-              <span className="font-semibold">{lease.verdict}</span>
+              <span className="font-bold">{lease.verdict}</span>
             </div>
             <div className="text-[11px]">
-              Compliance: <span className="font-bold">{lease.performance_score}/100</span>
+              Compliance: <span className="font-bold text-white">{lease.performance_score}/100</span>
             </div>
           </div>
         )}
 
         {/* Metadata Details */}
-        <div className="space-y-1.5 text-xs font-mono text-gray-400 mb-4 pt-1 border-t border-gray-800/60">
+        <div className="space-y-2 text-xs font-mono text-luxury-sandDark mb-5 pt-1 border-t border-[#2C261C]">
           <div className="flex justify-between items-center">
             <span>Renter:</span>
-            <span className="text-gray-300 bg-gray-800/60 px-2 py-0.5 rounded text-[11px]">
+            <span className="text-luxury-sand bg-[#0A0B0E] px-2 py-0.5 rounded text-[11px] border border-[#2C261C]">
               {shortenAddress(lease.renter)} {isRenter ? '(You)' : ''}
             </span>
           </div>
           <div className="flex justify-between items-center">
             <span>Host Provider:</span>
-            <span className="text-gray-300 bg-gray-800/60 px-2 py-0.5 rounded text-[11px]">
+            <span className="text-luxury-sand bg-[#0A0B0E] px-2 py-0.5 rounded text-[11px] border border-[#2C261C]">
               {shortenAddress(lease.host)} {isHost ? '(You)' : ''}
             </span>
           </div>
           {lease.benchmark_log_url && (
             <div className="flex justify-between items-center">
               <span>Proof URL:</span>
-              <span className="text-blue-400 truncate max-w-[160px] text-right underline">
+              <span className="text-[#F5D061] truncate max-w-[170px] text-right underline">
                 {lease.benchmark_log_url.replace('https://', '')}
               </span>
             </div>
@@ -152,20 +152,20 @@ export const LeaseCard: React.FC<LeaseCardProps> = ({
 
       {/* Error Notice */}
       {actionError && (
-        <div className="p-2 rounded bg-red-950/80 border border-red-800 text-red-300 text-[11px] font-mono mb-3">
+        <div className="p-2.5 rounded-xl bg-rose-950/80 border border-rose-800 text-rose-300 text-[11px] font-mono mb-3">
           {actionError}
         </div>
       )}
 
       {/* Card Action Buttons */}
-      <div className="pt-3 border-t border-gray-800 flex items-center justify-between gap-2">
+      <div className="pt-3 border-t border-[#2C261C] flex items-center justify-between gap-2.5">
         
         {/* Status 0: OPEN - Host can claim & submit proof */}
         {lease.status === 0 && (
           <>
             <button
               onClick={() => onSubmitProof(lease)}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-sans text-xs font-semibold shadow-sm transition-colors"
+              className="btn-gold flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-sans tracking-wide"
             >
               <HardDrive className="w-3.5 h-3.5" />
               <span>Claim & Submit Proof</span>
@@ -175,7 +175,7 @@ export const LeaseCard: React.FC<LeaseCardProps> = ({
                 onClick={handleReclaim}
                 disabled={isReclaiming}
                 title="Cancel & Reclaim Escrow if expired"
-                className="p-2 rounded-lg bg-gray-800 hover:bg-red-950 text-gray-400 hover:text-red-400 border border-gray-700 transition-colors"
+                className="p-2.5 rounded-xl bg-[#0A0B0E] hover:bg-rose-950 text-luxury-sandDark hover:text-rose-400 border border-[#2C261C] transition-colors"
               >
                 {isReclaiming ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
               </button>
@@ -189,12 +189,12 @@ export const LeaseCard: React.FC<LeaseCardProps> = ({
             <button
               onClick={handleAdjudicate}
               disabled={isAdjudicating}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-sans text-xs font-semibold shadow-sm transition-colors disabled:opacity-50"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 via-yellow-600 to-[#D99B26] hover:from-amber-500 hover:to-[#F5D061] text-black font-sans text-xs font-bold shadow-gold-sm transition-all disabled:opacity-50"
             >
               {isAdjudicating ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>AI Jury Auditing...</span>
+                  <span>AI Jury Deliberating...</span>
                 </>
               ) : (
                 <>
@@ -205,10 +205,10 @@ export const LeaseCard: React.FC<LeaseCardProps> = ({
             </button>
             <button
               onClick={() => onInspectDiagnostics(lease)}
-              className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 transition-colors"
-              title="Inspect Telemetry"
+              className="p-2.5 rounded-xl bg-[#0A0B0E] hover:bg-[#1C1E26] text-[#F5D061] border border-[#2C261C] transition-colors"
+              title="Inspect Forensic Telemetry"
             >
-              <Gauge className="w-4 h-4 text-blue-400" />
+              <Gauge className="w-4 h-4" />
             </button>
           </div>
         )}
@@ -217,10 +217,10 @@ export const LeaseCard: React.FC<LeaseCardProps> = ({
         {(lease.status === 2 || lease.status === 3 || lease.status === 4) && (
           <button
             onClick={() => onInspectDiagnostics(lease)}
-            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-750 text-gray-200 border border-gray-700 hover:border-gray-600 font-sans text-xs font-medium transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#0A0B0E] hover:bg-[#1C1E26] text-[#F5D061] border border-[#2C261C] hover:border-[#F5D061]/50 font-sans text-xs font-bold transition-all"
           >
-            <span>View Hardware Diagnostics</span>
-            <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
+            <span>View Forensic Diagnostics</span>
+            <ArrowRight className="w-3.5 h-3.5 text-[#F5D061]" />
           </button>
         )}
 

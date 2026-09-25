@@ -4,9 +4,9 @@
 
 @layer base {
   body {
-    background-color: #0B0F19;
-    color: #F3F4F6;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #0A0B0E;
+    color: #F5F3EC;
+    font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -16,31 +16,47 @@
   }
 }
 
-/* RunPod / Lambda Labs Clean Card */
-.cloud-panel {
-  background: #111827;
-  border: 1px solid #1F2937;
-  border-radius: 0.75rem;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.25), 0 2px 4px -2px rgba(0, 0, 0, 0.25);
-  transition: all 0.2s ease-in-out;
+/* Luxury Gold Metallic Button */
+.btn-gold {
+  background: linear-gradient(135deg, #F5D061 0%, #D99B26 100%);
+  color: #0A0B0E;
+  font-weight: 700;
+  box-shadow: 0 4px 15px -3px rgba(245, 208, 97, 0.35);
+  transition: all 0.25s ease-in-out;
 }
 
-.cloud-panel:hover {
-  border-color: #374151;
+.btn-gold:hover {
+  background: linear-gradient(135deg, #FFE180 0%, #E8A835 100%);
+  box-shadow: 0 6px 20px -3px rgba(245, 208, 97, 0.5);
+  transform: translateY(-1px);
 }
 
-/* Subtle scrollbars */
+/* Fintech Card with Brushed Bronze Hairline */
+.fintech-card {
+  background: #111318;
+  border: 1px solid #2C261C;
+  border-radius: 0.875rem;
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.7), inset 0 1px 0 0 rgba(245, 208, 97, 0.08);
+  transition: all 0.25s ease-in-out;
+}
+
+.fintech-card:hover {
+  border-color: #4A3F2C;
+  box-shadow: 0 12px 30px -4px rgba(0, 0, 0, 0.8), 0 0 15px -3px rgba(245, 208, 97, 0.12), inset 0 1px 0 0 rgba(245, 208, 97, 0.15);
+}
+
+/* Custom Gold Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: #0B0F19;
+  background: #0A0B0E;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1F2937;
+  background: #2C261C;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #374151;
+  background: #D99B26;
 }

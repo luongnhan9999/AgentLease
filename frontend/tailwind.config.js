@@ -7,31 +7,32 @@ export default {
   theme: {
     extend: {
       colors: {
-        cloud: {
-          bg: '#0B0F19',        // Deep neutral zinc/slate canvas
-          card: '#111827',      // Primary card surface (Gray 900)
-          cardHover: '#161F32', // Hovered card
-          elevated: '#1F2937',  // Elevated element (Gray 800)
-          border: '#2A364F',    // Clean subtle border
-          borderLight: '#374151',
-          azure: '#3B82F6',     // Lambda/RunPod Azure blue
-          azureHover: '#2563EB',
-          azureLight: '#60A5FA',
-          emerald: '#10B981',   // Verified Green
-          rose: '#EF4444',      // Failed / Alert Red
-          amber: '#F59E0B',     // In Audit / Provisioning
-          slate: '#94A3B8',     // Secondary text
+        luxury: {
+          bg: '#0A0B0E',        // Velvety Carbon Obsidian
+          surface: '#111318',   // Primary card surface
+          elevated: '#171922',  // Hovered / Elevated module
+          card: '#14161E',      // Card canvas
+          border: '#2C261C',    // Antique bronze border
+          borderLight: '#433A2A',// Highlighted bronze hairline
+          gold: '#F5D061',      // Luminous Champagne Gold
+          goldDark: '#D99B26',  // Imperial Gold
+          goldMuted: '#967332', // Muted Gold Text
+          sand: '#E6DEC9',      // Soft cream sandstone
+          sandDark: '#A89E88',  // Secondary labels
+          emerald: '#10B981',   // Verified Jade
+          crimson: '#E11D48',   // Royal Ruby
+          amber: '#F59E0B',     // Topaz Amber
         }
       },
       fontFamily: {
         mono: ['JetBrains Mono', 'Menlo', 'Courier New', 'monospace'],
-        sans: ['Inter', 'Space Grotesk', 'system-ui', 'sans-serif'],
+        sans: ['Space Grotesk', 'Inter', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
-        'cloud-sm': '0 1px 2px 0 rgba(0, 0, 0, 0.25)',
-        'cloud-md': '0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.3)',
-        'cloud-lg': '0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.4)',
-        'azure-glow': '0 0 16px -2px rgba(59, 130, 246, 0.3)',
+        'gold-sm': '0 0 10px -2px rgba(245, 208, 97, 0.15)',
+        'gold-md': '0 4px 20px -2px rgba(245, 208, 97, 0.2)',
+        'gold-lg': '0 8px 30px -4px rgba(217, 155, 38, 0.25)',
+        'card-fintech': '0 8px 24px -4px rgba(0, 0, 0, 0.7), inset 0 1px 0 0 rgba(245, 208, 97, 0.08)',
       }
     },
   },
