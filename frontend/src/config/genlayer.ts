@@ -1,31 +1,11 @@
 // GenLayer Studionet Configuration & RPC Client
 import { createClient } from 'genlayer-js';
+import { studionet } from 'genlayer-js/chains';
 
 export const STUDIONET_CHAIN_ID = 61999;
-export const STUDIONET_CHAIN_ID_HEX = '0xF1EF';
+export const STUDIONET_CHAIN_ID_HEX = '0xF22F';
 export const STUDIONET_RPC = 'https://studio.genlayer.com/api';
 export const STUDIONET_EXPLORER = 'https://studio.genlayer.com';
-
-export const studionetChain = {
-  id: STUDIONET_CHAIN_ID,
-  name: 'GenLayer StudioNet',
-  rpcUrls: {
-    default: {
-      http: [STUDIONET_RPC],
-    },
-  },
-  nativeCurrency: {
-    name: 'GEN',
-    symbol: 'GEN',
-    decimals: 18,
-  },
-  blockExplorers: {
-    default: {
-      name: 'GenLayer Studio',
-      url: STUDIONET_EXPLORER,
-    },
-  },
-};
 
 export const GENLAYER_CHAIN_CONFIG = {
   chainId: STUDIONET_CHAIN_ID_HEX,
@@ -50,11 +30,12 @@ export function setContractAddress(address: string): void {
   localStorage.setItem(STORAGE_KEY_CONTRACT, address.trim());
 }
 
-// GenLayer Read-only Client using official SDK
+// GenLayer Client using official SDK configured for StudioNet with optional MetaMask provider
 export function getGenLayerClient() {
+  const ethereum = typeof window !== 'undefined' ? (window as any).ethereum : undefined;
   return createClient({
-    chain: studionetChain,
-    endpoint: STUDIONET_RPC,
+    chain: studionet,
+    provider: ethereum,
   });
 }
 
@@ -139,32 +120,13 @@ export async function switchToStudioNet(): Promise<boolean> {
 // Low-level RPC caller for GenLayer Studionet Contract Views
 export async function callContractView(methodName: string, args: any[] = []): Promise<any> {
   const contractAddress = getContractAddress();
-  try {
-    const client = getGenLayerClient();
-    const result = await (client as any).readContract({
-      address: contractAddress,
-      functionName: methodName,
-      args: args,
-    });
-    return result;
-  } catch (sdkError) {
-    console.warn(`[SDK fallback] readContract fallback for ${methodName}:`, sdkError);
-    const response = await fetch(STUDIONET_RPC, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: Date.now(),
-        method: 'gen_callView',
-        params: [contractAddress, methodName, args],
-      }),
-    });
-    const data = await response.json();
-    if (data.error) {
-      throw new Error(data.error.message || 'Error executing on-chain view method');
-    }
-    return data.result;
-  }
+  const client = getGenLayerClient();
+  const result = await client.readContract({
+    address: contractAddress as `0x${string}`,
+    functionName: methodName,
+    args: args,
+  });
+  return result;
 }
 
 // MetaMask Transaction Dispatcher for Public Write Methods
@@ -184,31 +146,22 @@ export async function executeContractWrite(
   const senderAddress = accounts[0];
   const contractAddress = getContractAddress();
 
-  const client = getGenLayerClient();
+  const client = createClient({
+    chain: studionet,
+    provider: ethereum,
+    account: senderAddress as `0x${string}`,
+  });
 
   try {
     const txHash = await client.writeContract({
-      address: contractAddress as any,
+      address: contractAddress as `0x${string}`,
       functionName: methodName,
       args: args,
       value: valueWei,
-      account: senderAddress,
     });
     return txHash as string;
   } catch (err: any) {
-    console.warn(`[GenLayer-JS Write Fallback] Writing via direct provider:`, err);
-    
-    const txParams = {
-      from: senderAddress,
-      to: contractAddress,
-      value: '0x' + valueWei.toString(16),
-      data: undefined,
-    };
-    
-    const tx = await ethereum.request({
-      method: 'eth_sendTransaction',
-      params: [txParams],
-    });
-    return tx;
+    console.error(`[GenLayer-JS Write Error] Writing ${methodName} failed:`, err);
+    throw err;
   }
 }
