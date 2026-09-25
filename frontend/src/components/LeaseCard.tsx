@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HardDrive, AlertTriangle, ShieldCheck, Zap, ArrowRight, RotateCcw, Loader2, Gauge, Microchip } from 'lucide-react';
+import { HardDrive, AlertTriangle, ShieldCheck, Zap, ArrowRight, RotateCcw, Loader2, Gauge, Microchip, Clock } from 'lucide-react';
 import { LeaseOrderData, formatGen, shortenAddress, getStatusMeta, parseGpuSpecs } from '../utils/helpers';
 import { executeContractWrite } from '../config/genlayer';
 
@@ -65,6 +65,16 @@ export const LeaseCard: React.FC<LeaseCardProps> = ({
             <span className="font-mono text-xs font-bold text-[#F5D061] bg-[#0A0B0E] px-3 py-1 rounded-lg border border-[#383226]">
               {lease.lease_id}
             </span>
+            {isRenter && (
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                YOU ARE RENTER
+              </span>
+            )}
+            {isHost && (
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                YOU ARE HOST
+              </span>
+            )}
           </div>
           
           <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${statusMeta.badgeBg} ${statusMeta.badgeText} ${statusMeta.borderColor}`}>
@@ -163,13 +173,20 @@ export const LeaseCard: React.FC<LeaseCardProps> = ({
         {/* Status 0: OPEN - Host can claim & submit proof */}
         {lease.status === 0 && (
           <>
-            <button
-              onClick={() => onSubmitProof(lease)}
-              className="btn-gold flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-sans tracking-wide"
-            >
-              <HardDrive className="w-3.5 h-3.5" />
-              <span>Claim & Submit Proof</span>
-            </button>
+            {isRenter ? (
+              <div className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-[#0A0B0E] text-luxury-sandDark text-xs font-mono border border-[#2C261C]">
+                <Clock className="w-3.5 h-3.5 text-[#F5D061] animate-pulse" />
+                <span>Awaiting GPU Host Claim</span>
+              </div>
+            ) : (
+              <button
+                onClick={() => onSubmitProof(lease)}
+                className="btn-gold flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-sans tracking-wide"
+              >
+                <HardDrive className="w-3.5 h-3.5" />
+                <span>Claim & Submit Proof</span>
+              </button>
+            )}
             {isRenter && (
               <button
                 onClick={handleReclaim}

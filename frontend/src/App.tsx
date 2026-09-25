@@ -381,11 +381,25 @@ export const App: React.FC = () => {
                           <td className="px-5 py-3.5 text-right whitespace-nowrap">
                             <div className="flex items-center justify-end gap-2">
                               {lease.status === 0 && (
+                                lease.renter.toLowerCase() === account?.toLowerCase() ? (
+                                  <span className="text-[11px] text-amber-400/80 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20">
+                                    Your Order
+                                  </span>
+                                ) : (
+                                  <button
+                                    onClick={() => setProofLease(lease)}
+                                    className="btn-gold px-3 py-1 rounded-lg text-xs"
+                                  >
+                                    Claim & Submit
+                                  </button>
+                                )
+                              )}
+                              {lease.status === 1 && (
                                 <button
-                                  onClick={() => setProofLease(lease)}
-                                  className="btn-gold px-3 py-1 rounded-lg text-xs"
+                                  onClick={() => setDiagnosticLease(lease)}
+                                  className="px-3 py-1 rounded-lg bg-gradient-to-r from-amber-600 to-[#D99B26] hover:to-[#F5D061] text-black font-bold text-xs"
                                 >
-                                  Claim
+                                  Audit SLA
                                 </button>
                               )}
                               <button
