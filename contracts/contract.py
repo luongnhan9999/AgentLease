@@ -133,9 +133,8 @@ class Contract(gl.Contract):
         """
         AI Jury fetches benchmark log directly on-chain via gl.nondet.web.render,
         evaluates GPU model validity, VRAM capacity, and synthetic benchmark scores,
-        with Canary Token Anti-Prompt Injection defense, and reaches consensus on VERDICT
-        (HARDWARE_VERIFIED, HARDWARE_DEGRADED, or HARDWARE_FRAUDULENT).
-        Transitions into AUDIT_COMPLETED (status 7) with an appeal challenge window.
+        with Canary Token defense, reaching consensus on initial VERDICT.
+        Transitions into AUDIT_COMPLETED (status 7) with a 30-block cooling-off window.
         """
         if lease_id not in self.leases:
             raise gl.UserError(f"Lease {lease_id} does not exist.")
@@ -288,8 +287,9 @@ Respond ONLY with valid JSON without markdown fences:
     @gl.public.write.payable
     def appeal_verdict(self, lease_id: str, new_evidence_url: str) -> None:
         """
-        Renter or Host can contest the initial audit verdict within 30 blocks cooling-off window.
-        Requires staking a 10% dispute bond to deter frivolous claims.
+        Renter or Host can contest initial verdict within 30 blocks cooling-off window.
+        Appellant MUST stake a 10% dispute bond to prevent frivolous griefing.
+        Bond is strictly tracked in total_compute_locked to prevent accounting divergence.
         """
         if lease_id not in self.leases:
             raise gl.UserError(f"Lease {lease_id} does not exist.")
@@ -305,11 +305,13 @@ Respond ONLY with valid JSON without markdown fences:
         self.lease_counter = self.lease_counter + u64(1)
         current_block = u256(int(self.lease_counter))
 
-        # 30 blocks appeal challenge window
         if current_block > (l.audit_completed_block + u256(30)):
             raise gl.UserError("Appeal challenge window has expired. Lease is eligible for final settlement.")
 
         required_bond = (l.escrow_amount * bigint(10)) // bigint(100)
+        if required_bond == bigint(0):
+            required_bond = bigint(1)
+
         staked_bond = bigint(gl.message.value)
         if staked_bond < required_bond:
             raise gl.UserError(f"Appeal bond insufficient. Minimum required: 10% ({required_bond} wei).")
@@ -325,12 +327,14 @@ Respond ONLY with valid JSON without markdown fences:
         l.verdict = "DISPUTED"
         l.reason = f"Initial verdict appealed by {'Renter' if sender == l.renter else 'Host'}. High Court AI Jury deliberation active."
 
+        # Strictly track deposited bond in locked compute reserve (fixes Accounting Divergence)
+        self.total_compute_locked = self.total_compute_locked + staked_bond
+
     @gl.public.write
     def adjudicate_appeal(self, lease_id: str) -> None:
         """
         High Court AI Jury reviews appealed evidence and delivers definitive settlement.
-        If appeal succeeds, appellant retrieves their dispute bond.
-        If appeal fails, dispute bond is slashed and awarded to the counterparty.
+        Properly disburses escrow and bond without bias, preventing double-accounting bugs.
         """
         if lease_id not in self.leases:
             raise gl.UserError(f"Lease {lease_id} does not exist.")
@@ -454,42 +458,61 @@ Respond ONLY with valid JSON:
 
         escrow_val = l.escrow_amount
         bond_val = l.dispute_bond
-        self.total_compute_locked = self.total_compute_locked - escrow_val
+        total_settling = escrow_val + bond_val
+        l.dispute_bond = bigint(0)
+
+        # Clear both escrow and bond from accounting (fixes Accounting Leak)
+        self.total_compute_locked = self.total_compute_locked - total_settling
         self.total_leases_settled = self.total_leases_settled + u32(1)
 
         counterparty = l.host if appellant == l.renter else l.renter
 
         if app_verdict == "APPEAL_UPHELD_VERIFIED":
-            # Appellant succeeds: return bond, 100% escrow to Host
+            # Hardware is confirmed genuine: 100% to Host
             l.status = u8(2)  # SETTLED_PAID
             l.verdict = "HARDWARE_VERIFIED"
             l.reason = reason
-            gl.get_contract_at(appellant).emit_transfer(value=u256(bond_val))
             gl.get_contract_at(l.host).emit_transfer(value=u256(escrow_val))
+            # If Host appealed, refund their bond. If Renter appealed, slash bond to Host
+            bond_recipient = l.host
+            gl.get_contract_at(bond_recipient).emit_transfer(value=u256(bond_val))
+
         elif app_verdict == "APPEAL_UPHELD_DEGRADED":
-            # Appellant partially succeeds: return bond, 60/40 split
+            # Hardware is partially throttled: 60% Host, 40% Renter
             l.status = u8(5)  # SETTLED_PARTIAL
             l.verdict = "HARDWARE_DEGRADED"
             l.reason = reason
-            gl.get_contract_at(appellant).emit_transfer(value=u256(bond_val))
             host_share = (escrow_val * bigint(60)) // bigint(100)
             renter_refund = escrow_val - host_share
             if host_share > bigint(0):
                 gl.get_contract_at(l.host).emit_transfer(value=u256(host_share))
             if renter_refund > bigint(0):
                 gl.get_contract_at(l.renter).emit_transfer(value=u256(renter_refund))
+            # Return bond to the appellant on compromise
+            gl.get_contract_at(appellant).emit_transfer(value=u256(bond_val))
+
         else:
-            # Appeal rejected: slash bond to counterparty, 100% refund to Renter
-            l.status = u8(3)  # FRAUD_REFUNDED
-            l.verdict = "HARDWARE_FRAUDULENT"
-            l.reason = f"Appeal dismissed. {reason}"
-            gl.get_contract_at(counterparty).emit_transfer(value=u256(bond_val))
-            gl.get_contract_at(l.renter).emit_transfer(value=u256(escrow_val))
+            # Appeal rejected: evaluate based on who appealed
+            if appellant == l.host:
+                # Host appealed and lost: hardware confirmed fraudulent
+                l.status = u8(3)  # FRAUD_REFUNDED
+                l.verdict = "HARDWARE_FRAUDULENT"
+                l.reason = f"Host appeal dismissed. {reason}"
+                gl.get_contract_at(l.renter).emit_transfer(value=u256(escrow_val))
+                gl.get_contract_at(l.renter).emit_transfer(value=u256(bond_val))
+            else:
+                # Renter appealed and lost: hardware confirmed verified, original verdict stands
+                l.status = u8(2)  # SETTLED_PAID
+                l.verdict = "HARDWARE_VERIFIED"
+                l.reason = f"Renter appeal dismissed. {reason}"
+                gl.get_contract_at(l.host).emit_transfer(value=u256(escrow_val))
+                gl.get_contract_at(l.host).emit_transfer(value=u256(bond_val))
 
     @gl.public.write
     def finalize_settlement(self, lease_id: str) -> None:
         """
-        Executes non-contested payout after the 30 blocks appeal cooling-off window.
+        Executes non-contested payout strictly AFTER the 30 blocks appeal cooling-off window has elapsed.
+        Neither party can bypass the challenge window prematurely (fixes Economic Attack Vector).
         """
         if lease_id not in self.leases:
             raise gl.UserError(f"Lease {lease_id} does not exist.")
@@ -501,8 +524,8 @@ Respond ONLY with valid JSON:
         self.lease_counter = self.lease_counter + u64(1)
         current_block = u256(int(self.lease_counter))
 
-        # Check that challenge window has elapsed OR sender is Renter who waives challenge
-        if current_block <= (l.audit_completed_block + u256(30)) and gl.message.sender_address != l.renter:
+        # Enforced strictly for BOTH parties: 30 blocks cooling-off window cannot be front-run
+        if current_block <= (l.audit_completed_block + u256(30)):
             raise gl.UserError("Appeal cooling-off window (30 blocks) is still active.")
 
         escrow_val = l.escrow_amount
