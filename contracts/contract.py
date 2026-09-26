@@ -2,8 +2,9 @@
 from genlayer import *
 from dataclasses import dataclass
 import json
-import calendar
-from datetime import datetime, timezone
+
+if not hasattr(gl, "UserError"):
+    gl.UserError = getattr(gl.vm, "UserError", Exception)
 
 CANARY_TOKEN = "CANARY_AGENT_LEASE_V2"
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
@@ -23,13 +24,16 @@ def _addr_str(addr: Address) -> str:
 def _current_timestamp() -> u256:
     """
     Derives manipulation-resistant execution timestamp from consensus block context (gl.message_raw['datetime']).
-    Uses integer calendar.timegm on a UTC tuple to guarantee deterministic integer consensus across all nodes.
+    Safely parses UTC ISO string including 'Z' suffix across all Python runtime versions.
     """
+    import calendar
+    from datetime import datetime, timezone
     try:
         if hasattr(gl, "message_raw") and isinstance(gl.message_raw, dict):
-            dt_raw = str(gl.message_raw.get("datetime", ""))
-            if dt_raw:
-                dt = datetime.fromisoformat(dt_raw)
+            raw_val = gl.message_raw.get("datetime", "")
+            if raw_val:
+                dt_str = str(raw_val).strip().replace("Z", "+00:00")
+                dt = datetime.fromisoformat(dt_str)
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
                 ts = calendar.timegm(dt.utctimetuple())
@@ -37,7 +41,7 @@ def _current_timestamp() -> u256:
                     return u256(ts)
     except Exception:
         pass
-    return u256(0)
+    raise gl.UserError("Trusted execution timestamp unavailable from runtime context.")
 
 
 @allow_storage
@@ -539,61 +543,53 @@ Respond ONLY with valid JSON:
 
         appellee = l.host if appellant == l.renter else l.renter
 
-        if app_verdict == "APPEAL_UPHELD_VERIFIED":
-            # Appellant prevailed: Hardware confirmed verified. 100% escrow to Host, refund bond to appellant.
-            l.status = u8(2)  # SETTLED_PAID
-            l.verdict = "HARDWARE_VERIFIED"
-            l.reason = reason
-            gl.get_contract_at(l.host).emit_transfer(value=u256(escrow_val))
-            gl.get_contract_at(appellant).emit_transfer(value=u256(bond_val))
+        # Determine winner/loser to distribute bond correctly
+        appellant_won = False
+        final_verdict = l.initial_verdict
 
+        if app_verdict == "APPEAL_UPHELD_VERIFIED":
+            final_verdict = "HARDWARE_VERIFIED"
+            # Host wanted VERIFIED
+            appellant_won = (appellant == l.host)
         elif app_verdict == "APPEAL_UPHELD_DEGRADED":
-            # Appellant prevailed: Degraded performance confirmed (60% Host, 40% Renter). Refund bond to appellant.
+            final_verdict = "HARDWARE_DEGRADED"
+            # If initial was already DEGRADED, nothing changed -> appellant lost
+            if l.initial_verdict == "HARDWARE_DEGRADED":
+                appellant_won = False
+            else:
+                appellant_won = True
+        elif app_verdict == "APPEAL_UPHELD_FRAUDULENT":
+            final_verdict = "HARDWARE_FRAUDULENT"
+            # Renter wanted FRAUDULENT
+            appellant_won = (appellant == l.renter)
+        else:  # APPEAL_REJECTED
+            final_verdict = l.initial_verdict
+            appellant_won = False
+
+        # Distribute Dispute Bond: Winner receives bond (refunded if appellant won, or forfeit prize to appellee)
+        if appellant_won:
+            gl.get_contract_at(appellant).emit_transfer(value=u256(bond_val))
+        else:
+            gl.get_contract_at(appellee).emit_transfer(value=u256(bond_val))
+
+        # Distribute Escrow according to final_verdict
+        l.verdict = final_verdict
+        l.reason = reason
+
+        if final_verdict == "HARDWARE_VERIFIED":
+            l.status = u8(2)  # SETTLED_PAID
+            gl.get_contract_at(l.host).emit_transfer(value=u256(escrow_val))
+        elif final_verdict == "HARDWARE_DEGRADED":
             l.status = u8(5)  # SETTLED_PARTIAL
-            l.verdict = "HARDWARE_DEGRADED"
-            l.reason = reason
             host_share = (escrow_val * bigint(60)) // bigint(100)
             renter_refund = escrow_val - host_share
             if host_share > bigint(0):
                 gl.get_contract_at(l.host).emit_transfer(value=u256(host_share))
             if renter_refund > bigint(0):
                 gl.get_contract_at(l.renter).emit_transfer(value=u256(renter_refund))
-            gl.get_contract_at(appellant).emit_transfer(value=u256(bond_val))
-
-        elif app_verdict == "APPEAL_UPHELD_FRAUDULENT":
-            # Appellant prevailed: Fraud confirmed. 100% escrow refunded to Renter, refund bond to appellant.
-            l.status = u8(3)  # FRAUD_REFUNDED
-            l.verdict = "HARDWARE_FRAUDULENT"
-            l.reason = reason
-            gl.get_contract_at(l.renter).emit_transfer(value=u256(escrow_val))
-            gl.get_contract_at(appellant).emit_transfer(value=u256(bond_val))
-
         else:
-            # APPEAL_REJECTED: Appellant failed.
-            # 1. Transfer forfeit bond to the innocent counterparty (appellee)
-            gl.get_contract_at(appellee).emit_transfer(value=u256(bond_val))
-
-            # 2. Strictly preserve the initial verdict and execute its proper settlement
-            l.verdict = l.initial_verdict
-            l.reason = f"Appeal dismissed. Initial verdict ({l.initial_verdict}) upheld. {reason}"
-
-            if l.initial_verdict == "HARDWARE_VERIFIED":
-                l.status = u8(2)  # SETTLED_PAID
-                gl.get_contract_at(l.host).emit_transfer(value=u256(escrow_val))
-
-            elif l.initial_verdict == "HARDWARE_DEGRADED":
-                l.status = u8(5)  # SETTLED_PARTIAL
-                host_share = (escrow_val * bigint(60)) // bigint(100)
-                renter_refund = escrow_val - host_share
-                if host_share > bigint(0):
-                    gl.get_contract_at(l.host).emit_transfer(value=u256(host_share))
-                if renter_refund > bigint(0):
-                    gl.get_contract_at(l.renter).emit_transfer(value=u256(renter_refund))
-
-            else:
-                # Initial verdict was HARDWARE_FRAUDULENT
-                l.status = u8(3)  # FRAUD_REFUNDED
-                gl.get_contract_at(l.renter).emit_transfer(value=u256(escrow_val))
+            l.status = u8(3)  # FRAUD_REFUNDED
+            gl.get_contract_at(l.renter).emit_transfer(value=u256(escrow_val))
 
     @gl.public.write
     def finalize_settlement(self, lease_id: str) -> None:
