@@ -9,11 +9,19 @@ export interface LeaseOrderData {
   dispute_bond?: string;
   hardware_spec: string;
   benchmark_log_url: string;
+  challenge_nonce?: string;
+  session_id?: string;
   status: number; // 0: OPEN, 1: IN_AUDIT, 2: SETTLED_PAID, 3: FRAUD_REFUNDED, 4: CANCELLED, 5: SETTLED_PARTIAL, 6: DISPUTED, 7: AUDIT_COMPLETED
   verdict: string;
+  initial_verdict?: string;
+  initial_status?: number;
   reason: string;
   confidence: number;
   performance_score: number;
+  created_at_time?: string;
+  expires_at_time?: string;
+  audit_started_time?: string;
+  audit_completed_time?: string;
   created_at_block: string;
   expires_at_block: string;
   audit_started_block?: string;

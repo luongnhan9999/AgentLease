@@ -117,6 +117,18 @@ export const SubmitProof: React.FC<SubmitProofProps> = ({
             <p className="text-xs text-luxury-sand font-mono leading-relaxed bg-[#111318] p-3 rounded-lg border border-[#2C261C]">
               {lease.hardware_spec}
             </p>
+            {lease.challenge_nonce && (
+              <div className="mt-2.5 pt-2.5 border-t border-[#2C261C] grid grid-cols-2 gap-2 text-[11px] font-mono">
+                <div>
+                  <span className="text-luxury-sandDark">Contract Challenge Nonce:</span>
+                  <div className="text-[#F5D061] font-semibold truncate" title={lease.challenge_nonce}>{lease.challenge_nonce}</div>
+                </div>
+                <div>
+                  <span className="text-luxury-sandDark">Session Binding ID:</span>
+                  <div className="text-luxury-sand truncate" title={lease.session_id}>{lease.session_id || 'Auto-bound'}</div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Quick Benchmark Presets */}

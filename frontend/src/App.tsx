@@ -10,6 +10,7 @@ import { Plus, Search, Server, Terminal, Radio, Shield, LayoutGrid, List, AlertC
 import { LeaseOrderData, ClusterStats, shortenAddress, formatGen, getStatusMeta, parseGpuSpecs } from './utils/helpers';
 import {
   callContractView,
+  executeContractWrite,
   fetchCurrentBlockNumber,
   fetchContractBalance,
   switchToStudioNet,
@@ -414,10 +415,11 @@ export const App: React.FC = () => {
                                   <button
                                     onClick={async () => {
                                       try {
-                                        await callContractView('finalize_settlement', [lease.lease_id]);
+                                        await executeContractWrite('finalize_settlement', [lease.lease_id]);
                                         fetchData();
-                                      } catch (e) {
-                                        setDiagnosticLease(lease);
+                                      } catch (e: any) {
+                                        console.error('Table Finalize Error:', e);
+                                        alert(e?.message || 'Cannot finalize settlement yet. Cooling-off window (5 min) is still active.');
                                       }
                                     }}
                                     className="btn-gold px-2.5 py-1 rounded-lg text-xs"
