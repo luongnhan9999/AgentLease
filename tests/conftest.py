@@ -1,7 +1,31 @@
 import pytest
 import json
 import calendar
+import hmac
+import hashlib
 from datetime import datetime, timezone, timedelta
+
+
+def make_attestation_seal(nonce, session, machine_id, host):
+    canonical = f"{nonce.strip()}:{session.strip()}:{machine_id.strip()}:{str(host).strip().lower()}"
+    salt = b"GENLAYER_AGENT_LEASE_TRUSTED_DAEMON_V2"
+    return hmac.new(salt, canonical.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def make_benchmark_log(nonce, session, host, machine_id="NODE-GPU-H100-US-EAST-42", model="NVIDIA H100 80GB HBM3", tflops=989.4, vram=81920, is_valid_signature=True):
+    seal = make_attestation_seal(nonce, session, machine_id, host) if is_valid_signature else "deadbeef0000111122223333444455556666777788889999aaaabbbbccccdddd"
+    return f"""[SOVEREIGN COMPUTE BENCHMARK DAEMON v2.4]
+Contract Challenge Nonce: {nonce}
+Bound Session ID: {session}
+Machine ID: {machine_id}
+Designated Host: {str(host)}
+Cryptographic Attestation Seal: {seal}
+Device 0: {model}
+Device ID: 0x2330
+VRAM Total: {vram} MiB
+GEMM Peak TFLOPS (FP16): {tflops} TFLOPS
+Status: Healthy, Authentic
+"""
 
 
 class MockReturn:
@@ -32,24 +56,8 @@ class MockWeb:
     def render(self, url, mode="text"):
         if url in self.mock_responses:
             return self.mock_responses[url]
-        # Return default authentic, signed, challenge-bound benchmark log
-        return """
-[SOVEREIGN COMPUTE BENCHMARK DAEMON v2.4]
-Contract Challenge Nonce: CHALLENGE-lease-1-1790424000
-Bound Session ID: SESS-lease-1-1790424000
-Machine ID: NODE-GPU-H100-US-EAST-42
-Cryptographic Attestation Seal: SIG-ED25519-948f29ea17b849c0d2948cba47291048
-Device 0: NVIDIA H100 80GB HBM3
-Device ID: 0x2330
-VRAM Total: 81920 MiB
-Driver Version: 535.104.05
-CUDA Version: 12.2
-GEMM Peak TFLOPS (FP16): 989.4 TFLOPS
-Memory Bandwidth: 3.35 TB/s
-ECC Errors: 0
-PCIe Link: Gen5 x16 (64 GB/s)
-Status: Healthy, Authentic, No Throttling detected.
-"""
+        default_host = "0xbbbb111122223333444455556666777788889999"
+        return make_benchmark_log("CHALLENGE-lease-1-1790424000", "SESS-lease-1-1790424000", default_host)
 
 
 class MockGenVM:

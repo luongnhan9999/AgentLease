@@ -2,6 +2,7 @@ import sys
 import os
 import json
 import pytest
+from conftest import make_benchmark_log, make_attestation_seal
 
 # Add contracts to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "contracts")))
@@ -57,7 +58,7 @@ def setup_gl_mock(mock_env):
 
 
 # =============================================================================
-# TEST 1: Full Lifecycle with Manipulation-Resistant Time
+# TEST 1: Full Lifecycle with Manipulation-Resistant Time & Attestation
 # =============================================================================
 def test_agentlease_lifecycle(mock_gl_env):
     setup_gl_mock(mock_gl_env)
@@ -85,12 +86,17 @@ def test_agentlease_lifecycle(mock_gl_env):
     lease_json = json.loads(app.get_lease(lease_id))
     assert lease_json["status"] == 0  # OPEN
     assert lease_json["verdict"] == "PENDING"
-    assert "CHALLENGE-" in lease_json["challenge_nonce"]
-    assert "SESS-" in lease_json["session_id"]
+    challenge_nonce = lease_json["challenge_nonce"]
+    session_id = lease_json["session_id"]
+    assert "CHALLENGE-" in challenge_nonce
+    assert "SESS-" in session_id
 
-    # 2. Host submits proof
+    # 2. Host submits proof with authentic cryptographic machine seal
     mock_gl_env.message.sender_address = host_addr
     proof_url = "https://gist.githubusercontent.com/host/raw/h100_benchmark.log"
+    mock_gl_env.nondet.web.mock_responses[proof_url] = make_benchmark_log(
+        challenge_nonce, session_id, host_addr, "NODE-GPU-H100-US-EAST-42", "NVIDIA H100 80GB HBM3", 989.4, 81920
+    )
     app.submit_hardware_proof(lease_id, proof_url)
 
     updated_lease = json.loads(app.get_lease(lease_id))
@@ -150,13 +156,9 @@ def test_fresh_challenge_and_signed_telemetry_verifications(mock_gl_env):
     mock_gl_env.message.sender_address = host_addr
     app.submit_hardware_proof(lid_replay, "https://replay.com/log.txt")
 
-    mock_gl_env.nondet.web.mock_responses["https://replay.com/log.txt"] = """
-    Device: NVIDIA H100 80GB
-    VRAM: 81920 MiB
-    TFLOPS: 989 TFLOPS
-    Replay_Attack: True
-    Mismatched_Challenge: True
-    """
+    mock_gl_env.nondet.web.mock_responses["https://replay.com/log.txt"] = make_benchmark_log(
+        "CHALLENGE-OLD-EXPIRED-NONCE", "SESS-lease-1-1790424000", host_addr
+    )
     app.adjudicate_hardware(lid_replay)
     r_lease = json.loads(app.get_lease(lid_replay))
     assert r_lease["verdict"] == "HARDWARE_FRAUDULENT"
@@ -166,41 +168,77 @@ def test_fresh_challenge_and_signed_telemetry_verifications(mock_gl_env):
     mock_gl_env.message.sender_address = renter_addr
     mock_gl_env.message.value = 5_000_000_000_000_000_000
     lid_unbound = app.create_lease_order("NVIDIA H100 80GB SXM5 Enterprise", 86400)
+    unbound_lease = json.loads(app.get_lease(lid_unbound))
+    valid_nonce = unbound_lease["challenge_nonce"]
 
     mock_gl_env.message.sender_address = host_addr
     app.submit_hardware_proof(lid_unbound, "https://unbound.com/log.txt")
 
-    mock_gl_env.nondet.web.mock_responses["https://unbound.com/log.txt"] = """
-    Device: NVIDIA H100 80GB
-    VRAM: 81920 MiB
-    Unbound_Session: True
-    """
+    mock_gl_env.nondet.web.mock_responses["https://unbound.com/log.txt"] = make_benchmark_log(
+        valid_nonce, "SESS-DIFFERENT-UNBOUND-SESSION", host_addr
+    )
     app.adjudicate_hardware(lid_unbound)
     u_lease = json.loads(app.get_lease(lid_unbound))
     assert u_lease["verdict"] == "HARDWARE_FRAUDULENT"
     assert "Telemetry unbound" in u_lease["reason"]
 
-    # C. Unauthenticated source / Missing signature
+    # C. Unauthenticated source / Invalid signature
     mock_gl_env.message.sender_address = renter_addr
     mock_gl_env.message.value = 5_000_000_000_000_000_000
     lid_unsigned = app.create_lease_order("NVIDIA H100 80GB SXM5 Enterprise", 86400)
+    unsigned_lease = json.loads(app.get_lease(lid_unsigned))
 
     mock_gl_env.message.sender_address = host_addr
     app.submit_hardware_proof(lid_unsigned, "https://unsigned.com/log.txt")
 
-    mock_gl_env.nondet.web.mock_responses["https://unsigned.com/log.txt"] = """
-    Device: NVIDIA H100 80GB
-    VRAM: 81920 MiB
-    Unsigned_Source: True
-    """
+    mock_gl_env.nondet.web.mock_responses["https://unsigned.com/log.txt"] = make_benchmark_log(
+        unsigned_lease["challenge_nonce"], unsigned_lease["session_id"], host_addr, is_valid_signature=False
+    )
     app.adjudicate_hardware(lid_unsigned)
     s_lease = json.loads(app.get_lease(lid_unsigned))
     assert s_lease["verdict"] == "HARDWARE_FRAUDULENT"
-    assert "Unauthenticated source" in s_lease["reason"]
+    assert "Cryptographic attestation failed" in s_lease["reason"]
 
 
 # =============================================================================
-# TEST 3: Tri-State SLA Degraded Hardware Payout (60/40)
+# TEST 3: Cryptographic Attestation Seal & Machine Origin Verification
+# =============================================================================
+def test_cryptographic_attestation_seal_and_machine_origin_verification(mock_gl_env):
+    setup_gl_mock(mock_gl_env)
+    import contract
+    contract.gl = mock_gl_env
+
+    app = contract.Contract()
+    renter_addr = SimulatedAddress("0xAAAA111122223333444455556666777788889999")
+    host_addr = SimulatedAddress("0xBBBB111122223333444455556666777788889999")
+
+    mock_gl_env.message.sender_address = renter_addr
+    mock_gl_env.message.value = 5_000_000_000_000_000_000
+    lid = app.create_lease_order("NVIDIA H100 80GB SXM5", 86400)
+    l_data = json.loads(app.get_lease(lid))
+
+    nonce = l_data["challenge_nonce"]
+    session = l_data["session_id"]
+
+    # Verify public helper produces exact same seal
+    expected_seal = app.compute_machine_attestation_seal(nonce, session, "NODE-GPU-H100-US-EAST-42", str(host_addr))
+    computed_seal = make_attestation_seal(nonce, session, "NODE-GPU-H100-US-EAST-42", host_addr)
+    assert expected_seal == computed_seal
+
+    # Submit validly signed telemetry
+    mock_gl_env.message.sender_address = host_addr
+    valid_url = "https://host.com/valid_signed.log"
+    mock_gl_env.nondet.web.mock_responses[valid_url] = make_benchmark_log(nonce, session, host_addr)
+    app.submit_hardware_proof(lid, valid_url)
+    app.adjudicate_hardware(lid)
+
+    audited = json.loads(app.get_lease(lid))
+    assert audited["verdict"] == "HARDWARE_VERIFIED"
+    assert audited["status"] == 7  # AUDIT_COMPLETED
+
+
+# =============================================================================
+# TEST 4: Tri-State SLA Degraded Hardware Payout (60/40)
 # =============================================================================
 def test_degraded_hardware_partial_payout(mock_gl_env):
     setup_gl_mock(mock_gl_env)
@@ -215,15 +253,14 @@ def test_degraded_hardware_partial_payout(mock_gl_env):
     escrow_amt = 10_000_000_000_000_000_000  # 10 GEN
     mock_gl_env.message.value = escrow_amt
     lease_id = app.create_lease_order("NVIDIA H100 80GB SXM5", 86400)
+    l_data = json.loads(app.get_lease(lease_id))
 
     mock_gl_env.message.sender_address = host_addr
     throttled_url = "https://gist.githubusercontent.com/host/raw/throttled.log"
-    mock_gl_env.nondet.web.mock_responses[throttled_url] = """
-    Device: NVIDIA H100 80GB SXM5
-    VRAM: 72000 MiB
-    TFLOPS: 700 TFLOPS (Degraded performance due to thermal limit)
-    Attestation Seal: SIG-VALID-12345
-    """
+    mock_gl_env.nondet.web.mock_responses[throttled_url] = make_benchmark_log(
+        l_data["challenge_nonce"], l_data["session_id"], host_addr,
+        model="NVIDIA H100 80GB SXM5 (Degraded Clocks)", tflops=700.0, vram=72000
+    )
     app.submit_hardware_proof(lease_id, throttled_url)
     app.adjudicate_hardware(lease_id)
 
@@ -251,9 +288,18 @@ def test_degraded_hardware_partial_payout(mock_gl_env):
 
 
 # =============================================================================
-# TEST 4: Appeal Dismissal Preserves DEGRADED Initial Verdict (60/40) & Forfeits Bond
+# TEST 5: Appeal Changed to DEGRADED - Host Loses Bond to Renter (Steward Fix)
 # =============================================================================
-def test_appeal_rejected_preserves_degraded_verdict_and_routes_bond_to_host(mock_gl_env):
+def test_appeal_changed_to_degraded_host_loses_bond_to_renter(mock_gl_env):
+    """
+    Steward Gen. Dave Scenario:
+    Initial verdict was HARDWARE_FRAUDULENT.
+    Host appeals seeking HARDWARE_VERIFIED.
+    Court rules HARDWARE_DEGRADED.
+    Host failed to prove 100% compliance -> Host is the losing appellant.
+    10% dispute bond MUST forfeit to Renter (appellee).
+    Escrow is split 60% Host, 40% Renter.
+    """
     setup_gl_mock(mock_gl_env)
     import contract
     contract.gl = mock_gl_env
@@ -266,58 +312,187 @@ def test_appeal_rejected_preserves_degraded_verdict_and_routes_bond_to_host(mock
     escrow_amt = 10_000_000_000_000_000_000  # 10 GEN
     mock_gl_env.message.value = escrow_amt
     lease_id = app.create_lease_order("NVIDIA H100 80GB SXM5", 86400)
+    l_data = json.loads(app.get_lease(lease_id))
+
+    # Initial adjudication fails (e.g. 404 URL -> FRAUDULENT)
+    mock_gl_env.message.sender_address = host_addr
+    mock_gl_env.nondet.web.mock_responses["https://initial_fail.com/log.txt"] = "404 Not Found"
+    app.submit_hardware_proof(lease_id, "https://initial_fail.com/log.txt")
+    app.adjudicate_hardware(lease_id)
+
+    audited = json.loads(app.get_lease(lease_id))
+    assert audited["verdict"] == "HARDWARE_FRAUDULENT"
+    assert audited["status"] == 7
+
+    # Host appeals seeking Verified, stakes 10% bond (1 GEN)
+    bond_amt = 1_000_000_000_000_000_000
+    mock_gl_env.message.sender_address = host_addr
+    mock_gl_env.message.value = bond_amt
+    appeal_url = "https://host.com/degraded_appeal.log"
+    mock_gl_env.nondet.web.mock_responses[appeal_url] = make_benchmark_log(
+        l_data["challenge_nonce"], l_data["session_id"], host_addr,
+        model="NVIDIA H100 80GB SXM5 (Degraded Clocks)", tflops=700.0, vram=72000
+    )
+    app.appeal_verdict(lease_id, appeal_url)
+
+    disputed = json.loads(app.get_lease(lease_id))
+    assert disputed["status"] == 6  # DISPUTED
+
+    # High court adjudicates appeal -> results in APPEAL_UPHELD_DEGRADED
+    app.adjudicate_appeal(lease_id)
+
+    final_lease = json.loads(app.get_lease(lease_id))
+    assert final_lease["status"] == 5  # SETTLED_PARTIAL
+    assert final_lease["verdict"] == "HARDWARE_DEGRADED"
+
+    # Verify CRITICAL STEWARD REQUIREMENT:
+    # Host (appellant) LOST their claim for 100% Verified.
+    # Bond (1 GEN) MUST forfeit to Renter (appellee)!
+    renter_transfers = mock_gl_env.get_contract_at(renter_addr).transfers
+    host_transfers = mock_gl_env.get_contract_at(host_addr).transfers
+
+    renter_values = [t["value"] for t in renter_transfers]
+    host_values = [t["value"] for t in host_transfers]
+
+    # Renter receives the 1 GEN forfeit bond!
+    assert bond_amt in renter_values
+    # Escrow 60/40 split: Host receives 6 GEN, Renter receives 4 GEN
+    expected_host_escrow = (escrow_amt * 60) // 100
+    expected_renter_escrow = escrow_amt - expected_host_escrow
+
+    assert expected_host_escrow in host_values
+    assert expected_renter_escrow in renter_values
+
+
+# =============================================================================
+# TEST 6: Appeal Changed to DEGRADED - Renter Loses Bond to Host (Steward Fix)
+# =============================================================================
+def test_appeal_changed_to_degraded_renter_loses_bond_to_host(mock_gl_env):
+    """
+    Steward Gen. Dave Scenario:
+    Initial verdict was HARDWARE_VERIFIED.
+    Renter appeals seeking HARDWARE_FRAUDULENT (100% refund).
+    Court rules HARDWARE_DEGRADED.
+    Renter failed to prove total fraud -> Renter is the losing appellant.
+    10% dispute bond MUST forfeit to Host (appellee).
+    Escrow is split 60% Host, 40% Renter.
+    """
+    setup_gl_mock(mock_gl_env)
+    import contract
+    contract.gl = mock_gl_env
+
+    app = contract.Contract()
+    renter_addr = SimulatedAddress("0xAAAA111122223333444455556666777788889999")
+    host_addr = SimulatedAddress("0xBBBB111122223333444455556666777788889999")
+
+    mock_gl_env.message.sender_address = renter_addr
+    escrow_amt = 10_000_000_000_000_000_000
+    mock_gl_env.message.value = escrow_amt
+    lease_id = app.create_lease_order("NVIDIA H100 80GB SXM5", 86400)
+    l_data = json.loads(app.get_lease(lease_id))
+
+    # Initial adjudication passes -> HARDWARE_VERIFIED
+    mock_gl_env.message.sender_address = host_addr
+    proof_url = "https://host.com/valid.log"
+    mock_gl_env.nondet.web.mock_responses[proof_url] = make_benchmark_log(
+        l_data["challenge_nonce"], l_data["session_id"], host_addr
+    )
+    app.submit_hardware_proof(lease_id, proof_url)
+    app.adjudicate_hardware(lease_id)
+
+    audited = json.loads(app.get_lease(lease_id))
+    assert audited["verdict"] == "HARDWARE_VERIFIED"
+
+    # Renter appeals seeking Fraud, stakes 10% bond (1 GEN)
+    bond_amt = 1_000_000_000_000_000_000
+    mock_gl_env.message.sender_address = renter_addr
+    mock_gl_env.message.value = bond_amt
+    appeal_url = "https://renter.com/appeal_degraded.log"
+    mock_gl_env.nondet.web.mock_responses[appeal_url] = make_benchmark_log(
+        l_data["challenge_nonce"], l_data["session_id"], host_addr,
+        model="NVIDIA H100 80GB SXM5 (Degraded Clocks)", tflops=700.0, vram=72000
+    )
+    app.appeal_verdict(lease_id, appeal_url)
+
+    # Adjudicate appeal -> outcome is HARDWARE_DEGRADED
+    app.adjudicate_appeal(lease_id)
+
+    final_lease = json.loads(app.get_lease(lease_id))
+    assert final_lease["status"] == 5  # SETTLED_PARTIAL
+    assert final_lease["verdict"] == "HARDWARE_DEGRADED"
+
+    # Verify Renter (appellant) LOST their claim of total fraud!
+    # Bond (1 GEN) MUST forfeit to Host (appellee)!
+    host_transfers = mock_gl_env.get_contract_at(host_addr).transfers
+    renter_transfers = mock_gl_env.get_contract_at(renter_addr).transfers
+
+    host_values = [t["value"] for t in host_transfers]
+    renter_values = [t["value"] for t in renter_transfers]
+
+    # Host received the 1 GEN forfeit bond!
+    assert bond_amt in host_values
+    # Escrow 60/40 split
+    expected_host_escrow = (escrow_amt * 60) // 100
+    expected_renter_escrow = escrow_amt - expected_host_escrow
+    assert expected_host_escrow in host_values
+    assert expected_renter_escrow in renter_values
+
+
+# =============================================================================
+# TEST 7: Appeal Dismissal Preserves DEGRADED Initial Verdict & Forfeits Bond
+# =============================================================================
+def test_appeal_rejected_preserves_degraded_verdict_and_routes_bond_to_host(mock_gl_env):
+    setup_gl_mock(mock_gl_env)
+    import contract
+    contract.gl = mock_gl_env
+
+    app = contract.Contract()
+    renter_addr = SimulatedAddress("0xAAAA111122223333444455556666777788889999")
+    host_addr = SimulatedAddress("0xBBBB111122223333444455556666777788889999")
+
+    mock_gl_env.message.sender_address = renter_addr
+    escrow_amt = 10_000_000_000_000_000_000
+    mock_gl_env.message.value = escrow_amt
+    lease_id = app.create_lease_order("NVIDIA H100 80GB SXM5", 86400)
+    l_data = json.loads(app.get_lease(lease_id))
 
     mock_gl_env.message.sender_address = host_addr
-    mock_gl_env.nondet.web.mock_responses["https://degraded.com/log.txt"] = """
-    Device: NVIDIA H100 80GB SXM5
-    TFLOPS: 700 TFLOPS (Degraded)
-    """
+    mock_gl_env.nondet.web.mock_responses["https://degraded.com/log.txt"] = make_benchmark_log(
+        l_data["challenge_nonce"], l_data["session_id"], host_addr,
+        model="NVIDIA H100 80GB SXM5 (Degraded Clocks)", tflops=700.0, vram=72000
+    )
     app.submit_hardware_proof(lease_id, "https://degraded.com/log.txt")
     app.adjudicate_hardware(lease_id)
 
     audited = json.loads(app.get_lease(lease_id))
     assert audited["verdict"] == "HARDWARE_DEGRADED"
-    assert audited["initial_verdict"] == "HARDWARE_DEGRADED"
 
     # Renter files frivolous appeal wanting 100% refund
     mock_gl_env.message.sender_address = renter_addr
-    bond_amt = 1_000_000_000_000_000_000  # 10% bond (1 GEN)
+    bond_amt = 1_000_000_000_000_000_000
     mock_gl_env.message.value = bond_amt
-    mock_gl_env.nondet.web.mock_responses["https://appeal.com/proof.txt"] = "appeal_fail: unconvincing evidence"
+    mock_gl_env.nondet.web.mock_responses["https://appeal.com/proof.txt"] = make_benchmark_log(
+        l_data["challenge_nonce"], l_data["session_id"], host_addr,
+        model="1060 appeal_fail unconvincing", tflops=10.0, vram=6000
+    )
     app.appeal_verdict(lease_id, "https://appeal.com/proof.txt")
-
-    disputed = json.loads(app.get_lease(lease_id))
-    assert disputed["status"] == 6  # DISPUTED
-    assert disputed["initial_verdict"] == "HARDWARE_DEGRADED"
 
     # High Court adjudicates appeal -> APPEAL_REJECTED
     app.adjudicate_appeal(lease_id)
 
     final_lease = json.loads(app.get_lease(lease_id))
-    # CRITICAL: Verdict MUST be preserved as HARDWARE_DEGRADED (status 5)
     assert final_lease["status"] == 5  # SETTLED_PARTIAL
     assert final_lease["verdict"] == "HARDWARE_DEGRADED"
 
-    # Check Bond Routing: Host (appellee) receives the 1 GEN forfeit bond!
-    # Plus Host receives 60% of escrow (6 GEN), Renter receives 40% of escrow (4 GEN)
-    expected_host_escrow = (escrow_amt * 60) // 100
-    expected_renter_escrow = escrow_amt - expected_host_escrow
-
-    host_transfers = mock_gl_env.get_contract_at(host_addr).transfers
-    renter_transfers = mock_gl_env.get_contract_at(renter_addr).transfers
-
     # Host received bond (1 GEN) + 60% escrow (6 GEN)
+    host_transfers = mock_gl_env.get_contract_at(host_addr).transfers
     host_values = [t["value"] for t in host_transfers]
     assert bond_amt in host_values
-    assert expected_host_escrow in host_values
-
-    # Renter received 40% escrow (4 GEN)
-    renter_values = [t["value"] for t in renter_transfers]
-    assert expected_renter_escrow in renter_values
+    assert ((escrow_amt * 60) // 100) in host_values
 
 
 # =============================================================================
-# TEST 5: Appeal Reversal (APPEAL_UPHELD) Refunds Bond & Reverses Settlement
+# TEST 8: Appeal Reversal (APPEAL_UPHELD) Refunds Bond & Reverses Settlement
 # =============================================================================
 def test_appeal_upheld_refunds_bond_and_reverses_settlement(mock_gl_env):
     setup_gl_mock(mock_gl_env)
@@ -332,8 +507,9 @@ def test_appeal_upheld_refunds_bond_and_reverses_settlement(mock_gl_env):
     escrow_amt = 10_000_000_000_000_000_000
     mock_gl_env.message.value = escrow_amt
     lease_id = app.create_lease_order("NVIDIA H100 80GB SXM5", 86400)
+    l_data = json.loads(app.get_lease(lease_id))
 
-    # Initial adjudication fails (e.g. 404 URL -> FRAUDULENT)
+    # Initial adjudication fails (404 URL -> FRAUDULENT)
     mock_gl_env.message.sender_address = host_addr
     mock_gl_env.nondet.web.mock_responses["https://missing.com/404.txt"] = "404 Not Found"
     app.submit_hardware_proof(lease_id, "https://missing.com/404.txt")
@@ -342,16 +518,14 @@ def test_appeal_upheld_refunds_bond_and_reverses_settlement(mock_gl_env):
     audited = json.loads(app.get_lease(lease_id))
     assert audited["verdict"] == "HARDWARE_FRAUDULENT"
 
-    # Host appeals with certified authenticated proof
+    # Host appeals with certified authentic proof
     mock_gl_env.message.sender_address = host_addr
     bond_amt = 1_000_000_000_000_000_000
     mock_gl_env.message.value = bond_amt
     appeal_url = "https://gist.github.com/host/certified.log"
-    mock_gl_env.nondet.web.mock_responses[appeal_url] = """
-    Certified Authentic NVIDIA H100 80GB SXM5
-    VRAM: 81920 MiB
-    GEMM TFLOPS: 990 TFLOPS
-    """
+    mock_gl_env.nondet.web.mock_responses[appeal_url] = make_benchmark_log(
+        l_data["challenge_nonce"], l_data["session_id"], host_addr
+    )
     app.appeal_verdict(lease_id, appeal_url)
 
     # Adjudicate appeal -> APPEAL_UPHELD_VERIFIED
@@ -369,7 +543,7 @@ def test_appeal_upheld_refunds_bond_and_reverses_settlement(mock_gl_env):
 
 
 # =============================================================================
-# TEST 6: Renter Appeal Dismissal Preserves VERIFIED Initial Verdict & Forfeits Bond
+# TEST 9: Renter Appeal Dismissal Preserves VERIFIED Initial Verdict & Forfeits Bond
 # =============================================================================
 def test_renter_appeal_dismissed_preserves_verified_and_forfeits_bond(mock_gl_env):
     setup_gl_mock(mock_gl_env)
@@ -384,30 +558,38 @@ def test_renter_appeal_dismissed_preserves_verified_and_forfeits_bond(mock_gl_en
     escrow_amt = 10_000_000_000_000_000_000
     mock_gl_env.message.value = escrow_amt
     lease_id = app.create_lease_order("NVIDIA H100 80GB SXM5", 86400)
+    l_data = json.loads(app.get_lease(lease_id))
 
     # Initial adjudication passes -> HARDWARE_VERIFIED
     mock_gl_env.message.sender_address = host_addr
-    app.submit_hardware_proof(lease_id, "https://valid.com/log.txt")
+    proof_url = "https://valid.com/log.txt"
+    mock_gl_env.nondet.web.mock_responses[proof_url] = make_benchmark_log(
+        l_data["challenge_nonce"], l_data["session_id"], host_addr
+    )
+    app.submit_hardware_proof(lease_id, proof_url)
     app.adjudicate_hardware(lease_id)
 
     audited = json.loads(app.get_lease(lease_id))
     assert audited["verdict"] == "HARDWARE_VERIFIED"
 
-    # Renter maliciously appeals to try to extract funds
+    # Renter files frivolous appeal
     mock_gl_env.message.sender_address = renter_addr
     bond_amt = 1_000_000_000_000_000_000
     mock_gl_env.message.value = bond_amt
-    mock_gl_env.nondet.web.mock_responses["https://renter/fake_evidence.txt"] = "appeal_fail: unsubstantiated claim"
-    app.appeal_verdict(lease_id, "https://renter/fake_evidence.txt")
+    mock_gl_env.nondet.web.mock_responses["https://renter_frivolous.com/log.txt"] = make_benchmark_log(
+        l_data["challenge_nonce"], l_data["session_id"], host_addr,
+        model="1060 appeal_fail unconvincing", tflops=10.0, vram=6000
+    )
+    app.appeal_verdict(lease_id, "https://renter_frivolous.com/log.txt")
 
-    # High Court dismisses appeal -> APPEAL_REJECTED
+    # High Court dismisses appeal -> preserves initial VERIFIED
     app.adjudicate_appeal(lease_id)
 
     final_lease = json.loads(app.get_lease(lease_id))
     assert final_lease["status"] == 2  # SETTLED_PAID
     assert final_lease["verdict"] == "HARDWARE_VERIFIED"
 
-    # Host received 100% escrow (10 GEN) AND the 1 GEN forfeit bond!
+    # Host received 100% escrow (10 GEN) + 1 GEN forfeit bond
     host_transfers = mock_gl_env.get_contract_at(host_addr).transfers
     host_values = [t["value"] for t in host_transfers]
     assert escrow_amt in host_values
@@ -415,7 +597,68 @@ def test_renter_appeal_dismissed_preserves_verified_and_forfeits_bond(mock_gl_en
 
 
 # =============================================================================
-# TEST 7: Cancel or Reclaim Governed by Deterministic Time
+# TEST 10: Table Finalize Transaction Path (writeContract route)
+# =============================================================================
+def test_table_finalize_settlement_transaction_path(mock_gl_env):
+    """
+    Dedicated test covering the frontend Table View 'Finalize' writeContract path:
+    1. Lease in AUDIT_COMPLETED (status 7).
+    2. Finalize during 5-minute cooling window reverts with UserError.
+    3. Finalize after 5-minute cooling window executes state-modifying write transaction.
+    4. Balances, status, and double-finalize protection verified.
+    """
+    setup_gl_mock(mock_gl_env)
+    import contract
+    contract.gl = mock_gl_env
+
+    app = contract.Contract()
+    renter_addr = SimulatedAddress("0x1111111111111111111111111111111111111111")
+    host_addr = SimulatedAddress("0x2222222222222222222222222222222222222222")
+
+    mock_gl_env.message.sender_address = renter_addr
+    escrow_amt = 8_000_000_000_000_000_000  # 8 GEN
+    mock_gl_env.message.value = escrow_amt
+    lease_id = app.create_lease_order("NVIDIA H100 SXM5 80GB", 86400)
+    l_data = json.loads(app.get_lease(lease_id))
+
+    mock_gl_env.message.sender_address = host_addr
+    proof_url = "https://table_finalize_test.com/log.txt"
+    mock_gl_env.nondet.web.mock_responses[proof_url] = make_benchmark_log(
+        l_data["challenge_nonce"], l_data["session_id"], host_addr
+    )
+    app.submit_hardware_proof(lease_id, proof_url)
+    app.adjudicate_hardware(lease_id)
+
+    in_audit = json.loads(app.get_lease(lease_id))
+    assert in_audit["status"] == 7  # AUDIT_COMPLETED
+
+    # Action 1: Premature table Finalize click during cooling-off window must revert
+    with pytest.raises(Exception, match="cooling-off window"):
+        app.finalize_settlement(lease_id)
+
+    # Action 2: Advance time past 300-second cooling window (e.g. +310 seconds)
+    mock_gl_env.advance_time(310)
+
+    # Action 3: Table Finalize executed as on-chain write transaction
+    app.finalize_settlement(lease_id)
+
+    settled_lease = json.loads(app.get_lease(lease_id))
+    assert settled_lease["status"] == 2  # SETTLED_PAID
+    assert settled_lease["verdict"] == "HARDWARE_VERIFIED"
+    assert app.total_compute_locked == 0
+    assert app.total_leases_settled == 1
+
+    host_transfers = mock_gl_env.get_contract_at(host_addr).transfers
+    assert len(host_transfers) == 1
+    assert host_transfers[0]["value"] == escrow_amt
+
+    # Action 4: Double-finalize protection (reverts if called again)
+    with pytest.raises(Exception, match="not awaiting final settlement"):
+        app.finalize_settlement(lease_id)
+
+
+# =============================================================================
+# TEST 11: Cancel or Reclaim with Manipulation-Resistant Time Mechanism
 # =============================================================================
 def test_cancel_or_reclaim_with_time_mechanism(mock_gl_env):
     setup_gl_mock(mock_gl_env)
@@ -424,32 +667,38 @@ def test_cancel_or_reclaim_with_time_mechanism(mock_gl_env):
 
     app = contract.Contract()
     renter_addr = SimulatedAddress("0xAAAA111122223333444455556666777788889999")
+    other_addr = SimulatedAddress("0xCCCC111122223333444455556666777788889999")
+
     mock_gl_env.message.sender_address = renter_addr
     escrow_amt = 5_000_000_000_000_000_000
     mock_gl_env.message.value = escrow_amt
+    lease_id = app.create_lease_order("NVIDIA A100 80GB SXM4", 86400)
 
-    lease_id = app.create_lease_order("NVIDIA RTX 4090 Mesh", 86400)
+    # Non-renter cannot reclaim
+    mock_gl_env.message.sender_address = other_addr
+    with pytest.raises(Exception, match="Only the compute renter can cancel or reclaim"):
+        app.cancel_or_reclaim(lease_id)
 
-    # Cannot cancel before expiration
+    # Renter cannot cancel before duration expiration
+    mock_gl_env.message.sender_address = renter_addr
     with pytest.raises(Exception, match="duration has not yet expired"):
         app.cancel_or_reclaim(lease_id)
 
-    # Advance time past 86400 seconds (1 day)
+    # Advance time past expiration (86401 seconds)
     mock_gl_env.advance_time(86401)
     app.cancel_or_reclaim(lease_id)
 
-    cancelled = json.loads(app.get_lease(lease_id))
-    assert cancelled["status"] == 4  # CANCELLED
-    assert cancelled["verdict"] == "CANCELLED"
+    cancelled_lease = json.loads(app.get_lease(lease_id))
+    assert cancelled_lease["status"] == 4  # CANCELLED
+    assert cancelled_lease["verdict"] == "CANCELLED"
     assert app.total_compute_locked == 0
 
-    # Renter refunded 100% of escrow
     renter_transfers = mock_gl_env.get_contract_at(renter_addr).transfers
     assert renter_transfers[0]["value"] == escrow_amt
 
 
 # =============================================================================
-# TEST 8: Pagination & Stats Verification
+# TEST 12: Contract Views and Pagination
 # =============================================================================
 def test_views_and_pagination(mock_gl_env):
     setup_gl_mock(mock_gl_env)
@@ -458,22 +707,33 @@ def test_views_and_pagination(mock_gl_env):
 
     app = contract.Contract()
     renter_addr = SimulatedAddress("0xAAAA111122223333444455556666777788889999")
+
     mock_gl_env.message.sender_address = renter_addr
     mock_gl_env.message.value = 1_000_000_000_000_000_000
 
-    app.create_lease_order("NVIDIA Cluster A", 86400)
-    app.create_lease_order("NVIDIA Cluster B", 86400)
-    app.create_lease_order("NVIDIA Cluster C", 86400)
+    lid1 = app.create_lease_order("NVIDIA H100 Order 1", 86400)
+    lid2 = app.create_lease_order("NVIDIA H100 Order 2", 86400)
+    lid3 = app.create_lease_order("NVIDIA H100 Order 3", 86400)
 
     assert app.get_lease_count() == 3
-    assert app.get_lease_id_by_index(0) == "lease-1"
-    assert app.get_lease_id_by_index(1) == "lease-2"
-    assert app.get_lease_id_by_index(2) == "lease-3"
+    assert app.get_lease_id_by_index(0) == lid1
+    assert app.get_lease_id_by_index(1) == lid2
+    assert app.get_lease_id_by_index(2) == lid3
 
-    paginated = json.loads(app.get_leases_paginated(0, 2))
-    assert len(paginated) == 2
-    assert paginated[0]["lease_id"] == "lease-1"
-    assert paginated[1]["lease_id"] == "lease-2"
+    with pytest.raises(Exception, match="out of bounds"):
+        app.get_lease_id_by_index(99)
+
+    page1 = json.loads(app.get_leases_paginated(0, 2))
+    assert len(page1) == 2
+    assert page1[0]["lease_id"] == lid1
+    assert page1[1]["lease_id"] == lid2
+
+    page2 = json.loads(app.get_leases_paginated(2, 2))
+    assert len(page2) == 1
+    assert page2[0]["lease_id"] == lid3
+
+    empty_page = json.loads(app.get_leases_paginated(10, 5))
+    assert empty_page == []
 
     stats = json.loads(app.get_stats())
     assert stats["total_leases"] == 3

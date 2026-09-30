@@ -4,7 +4,7 @@ import json
 from genlayer_py import create_client, studionet, create_account
 from genlayer_py.types.transactions import TransactionStatus
 
-CONTRACT_ADDRESS = "0xeBBf1671418Fee88Cc52a16125BBA3382Eb56158"
+CONTRACT_ADDRESS = "0x0545B416Be04977F04E028B957D7aBf165D8c0DB"
 
 def main():
     print(f"Connecting to GenLayer StudioNet with contract: {CONTRACT_ADDRESS}")
