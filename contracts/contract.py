@@ -44,6 +44,57 @@ def _current_timestamp() -> u256:
     raise gl.UserError("Trusted execution timestamp unavailable from runtime context.")
 
 
+def _fetch_web(url: str) -> str:
+    """Safely extracts web page telemetry across GenVM runtime versions."""
+    try:
+        if hasattr(gl, "nondet") and hasattr(gl.nondet, "web") and hasattr(gl.nondet.web, "render"):
+            return gl.nondet.web.render(url, mode="text")
+        if hasattr(gl, "get_web_page"):
+            return gl.get_web_page(url)
+    except Exception as e:
+        return f"FETCH_FAILED: {str(e)}"
+    return ""
+
+
+def _exec_ai_prompt(prompt: str) -> dict:
+    """Executes AI prompt with structured JSON response across GenVM runtime versions."""
+    raw_res = ""
+    try:
+        if hasattr(gl, "nondet") and hasattr(gl.nondet, "exec_prompt"):
+            raw_res = gl.nondet.exec_prompt(prompt, response_format="json")
+        elif hasattr(gl, "exec_prompt"):
+            raw_res = gl.exec_prompt(prompt)
+    except Exception as e:
+        return {"error": str(e)}
+
+    if isinstance(raw_res, dict):
+        return raw_res
+    clean_res = str(raw_res).strip()
+    if clean_res.startswith("```json"):
+        clean_res = clean_res[7:]
+    if clean_res.startswith("```"):
+        clean_res = clean_res[3:]
+    if clean_res.endswith("```"):
+        clean_res = clean_res[:-3]
+    clean_res = clean_res.strip()
+    try:
+        return json.loads(clean_res)
+    except Exception:
+        return {}
+
+
+def _run_nondet(leader_fn, validator_fn):
+    """Executes leader-validator consensus with graceful fallback."""
+    if hasattr(gl, "vm") and hasattr(gl.vm, "run_nondet"):
+        return gl.vm.run_nondet(leader_fn, validator_fn)
+    leader_res = leader_fn()
+    class _DummyRet:
+        def __init__(self, c):
+            self.calldata = c
+    validator_fn(_DummyRet(leader_res))
+    return leader_res
+
+
 @allow_storage
 @dataclass
 class MachineIdentity:
@@ -430,34 +481,23 @@ class Contract(gl.Contract):
 
         host_str = _addr_str(l.host)
         clean_url = l.benchmark_log_url
-
-        web_content = ""
-        try:
-            web_content = gl.get_web_page(clean_url)
-        except Exception as e:
-            web_content = f"FETCH_FAILED: {str(e)}"
-
-        # Programmatic Asymmetric Machine Origin & Cryptographic Attestation Verification
-        passed_attestation, attestation_reason, telemetry_dict = _verify_telemetry_attestation(
-            web_content, l.challenge_nonce, l.session_id, host_str, self.authorized_machines
-        )
-
         audit_done_time = _current_timestamp()
 
-        # If cryptographic attestation fails, immediate FRAUD without burning LLM calls
-        if not passed_attestation:
-            l.status = u8(7)  # 7: AUDIT_COMPLETED
-            l.verdict = "HARDWARE_FRAUDULENT"
-            l.initial_verdict = "HARDWARE_FRAUDULENT"
-            l.initial_status = u8(7)
-            l.reason = f"Cryptographic attestation failed: {attestation_reason}"
-            l.confidence = u8(100)
-            l.performance_score = u8(0)
-            l.audit_completed_time = audit_done_time
-            self.leases[lease_id] = l
-            return
+        def leader_fn():
+            web_content = _fetch_web(clean_url)
+            passed_attestation, attestation_reason, _ = _verify_telemetry_attestation(
+                web_content, l.challenge_nonce, l.session_id, host_str, self.authorized_machines
+            )
+            if not passed_attestation:
+                return {
+                    "verdict": "HARDWARE_FRAUDULENT",
+                    "score": 0,
+                    "confidence": 100,
+                    "reason": f"Cryptographic attestation failed: {attestation_reason}",
+                    "passed_attestation": False,
+                }
 
-        task = f"""You are an elite, objective Hardware SLA & Compute Benchmarking Validator on GenLayer.
+            task = f"""You are an elite, objective Hardware SLA & Compute Benchmarking Validator on GenLayer.
 Evaluate whether the host provided authentic GPU hardware telemetry matching renter specifications.
 
 LEASE DETAILS:
@@ -489,29 +529,45 @@ Respond with ONLY a raw JSON object:
     "canary_echo": "{CANARY_TOKEN}",
     "reason": "<Detailed diagnosis under 180 chars>"
 }}"""
-
-        try:
-            raw_res = gl.exec_prompt(task)
-            if isinstance(raw_res, dict):
-                parsed = raw_res
-            else:
-                clean_res = raw_res.strip()
-                if clean_res.startswith("```json"):
-                    clean_res = clean_res[7:]
-                if clean_res.startswith("```"):
-                    clean_res = clean_res[3:]
-                if clean_res.endswith("```"):
-                    clean_res = clean_res[:-3]
-                clean_res = clean_res.strip()
-                parsed = json.loads(clean_res)
-
+            parsed = _exec_ai_prompt(task)
             v = str(parsed.get("verdict", "HARDWARE_FRAUDULENT")).strip().upper()
             if v not in ["HARDWARE_VERIFIED", "HARDWARE_DEGRADED", "HARDWARE_FRAUDULENT"]:
                 v = "HARDWARE_FRAUDULENT"
-
-            score = int(parsed.get("score", 0))
-            conf = int(parsed.get("confidence", 0))
+            score = int(parsed.get("score") or parsed.get("performance_score") or 0)
+            conf = int(parsed.get("confidence", 95))
             rsn = str(parsed.get("reason", "Automated consensus diagnostic completed."))[:200]
+            return {
+                "verdict": v,
+                "score": score,
+                "confidence": conf,
+                "reason": rsn,
+                "passed_attestation": True,
+            }
+
+        def validator_fn(leader_res):
+            data = leader_res.calldata if hasattr(leader_res, "calldata") else leader_res
+            if not isinstance(data, dict):
+                return False
+            web_content = _fetch_web(clean_url)
+            passed, _, _ = _verify_telemetry_attestation(
+                web_content, l.challenge_nonce, l.session_id, host_str, self.authorized_machines
+            )
+            if not passed:
+                return data.get("verdict") == "HARDWARE_FRAUDULENT"
+            return data.get("verdict") in ["HARDWARE_VERIFIED", "HARDWARE_DEGRADED", "HARDWARE_FRAUDULENT"]
+
+        try:
+            res = _run_nondet(leader_fn, validator_fn)
+            if not isinstance(res, dict):
+                res = {}
+
+            v = str(res.get("verdict", "HARDWARE_FRAUDULENT")).strip().upper()
+            if v not in ["HARDWARE_VERIFIED", "HARDWARE_DEGRADED", "HARDWARE_FRAUDULENT"]:
+                v = "HARDWARE_FRAUDULENT"
+
+            score = int(res.get("score") or res.get("performance_score") or 0)
+            conf = int(res.get("confidence", 95))
+            rsn = str(res.get("reason", "Automated consensus diagnostic completed."))[:200]
 
             l.verdict = v
             l.initial_verdict = v
@@ -558,7 +614,10 @@ Respond with ONLY a raw JSON object:
             raise gl.UserError(f"Appeal cooling-off window is still active ({remaining}s remaining).")
 
         escrow_val = int(l.escrow_amount)
-        self.total_compute_locked = self.total_compute_locked - l.escrow_amount
+        if self.total_compute_locked >= l.escrow_amount:
+            self.total_compute_locked = self.total_compute_locked - l.escrow_amount
+        else:
+            self.total_compute_locked = u256(0)
 
         if l.verdict == "HARDWARE_VERIFIED":
             l.status = u8(2)  # 2: SETTLED_PAID
@@ -628,6 +687,7 @@ Respond with ONLY a raw JSON object:
         l.status = u8(6)  # 6: DISPUTED
         l.benchmark_log_url = clean_url
         l.reason = f"Appealed by {_addr_str(sender)}. Staked bond: {int(bond)}. Secondary tribunal auditing..."
+        self.total_compute_locked = self.total_compute_locked + bond
         self.leases[lease_id] = l
 
     @gl.public.write
@@ -650,26 +710,18 @@ Respond with ONLY a raw JSON object:
         appellant_str = _addr_str(appellant).lower()
         appellee = l.host if appellant_str == renter_str else l.renter
 
-        # 1. Fetch Appeal Evidence
-        appeal_evidence = ""
-        try:
-            appeal_evidence = gl.get_web_page(l.benchmark_log_url)
-        except Exception as e:
-            appeal_evidence = f"FETCH_FAILED: {str(e)}"
+        def leader_fn():
+            appeal_evidence = _fetch_web(l.benchmark_log_url)
+            passed_attestation, attestation_reason, _ = _verify_telemetry_attestation(
+                appeal_evidence, l.challenge_nonce, l.session_id, host_str, self.authorized_machines
+            )
+            if not passed_attestation:
+                return {
+                    "appeal_verdict": "APPEAL_DISMISSED",
+                    "reason": f"Appeal evidence failed cryptographic attestation: {attestation_reason}",
+                    "confidence": 95,
+                }
 
-        # 2. Cryptographic Attestation Verification on Appeal Telemetry against Authorized Registry
-        passed_attestation, attestation_reason, _ = _verify_telemetry_attestation(
-            appeal_evidence, l.challenge_nonce, l.session_id, host_str, self.authorized_machines
-        )
-
-        app_verdict = "APPEAL_DISMISSED"
-        app_reason = ""
-        app_conf = 95
-
-        if not passed_attestation:
-            app_verdict = "APPEAL_DISMISSED"
-            app_reason = f"Appeal evidence failed cryptographic attestation: {attestation_reason}"
-        else:
             task = f"""You are the Supreme Magistrate and Hardware Appeal Tribunal on GenLayer.
 Evaluate this contested compute lease dispute.
 
@@ -698,35 +750,55 @@ OUTPUT FORMAT (JSON ONLY):
     "reason": "<Under 180 chars>",
     "confidence": <integer 0-100>
 }}"""
+            parsed = _exec_ai_prompt(task)
+            app_v = str(parsed.get("appeal_verdict") or parsed.get("verdict", "APPEAL_DISMISSED")).strip().upper()
+            if app_v in ["APPEAL_REJECTED", "APPEAL_DISMISSED"]:
+                app_v = "APPEAL_DISMISSED"
+            app_rsn = str(parsed.get("reason", "Supreme tribunal adjudication concluded."))[:200]
+            app_c = int(parsed.get("confidence", 95))
+            return {
+                "appeal_verdict": app_v,
+                "reason": app_rsn,
+                "confidence": app_c,
+            }
 
-            try:
-                raw_res = gl.exec_prompt(task)
-                if isinstance(raw_res, dict):
-                    parsed = raw_res
-                else:
-                    clean_res = raw_res.strip()
-                    if clean_res.startswith("```json"):
-                        clean_res = clean_res[7:]
-                    if clean_res.startswith("```"):
-                        clean_res = clean_res[3:]
-                    if clean_res.endswith("```"):
-                        clean_res = clean_res[:-3]
-                    clean_res = clean_res.strip()
-                    parsed = json.loads(clean_res)
+        def validator_fn(leader_res):
+            data = leader_res.calldata if hasattr(leader_res, "calldata") else leader_res
+            if not isinstance(data, dict):
+                return False
+            appeal_evidence = _fetch_web(l.benchmark_log_url)
+            passed, _, _ = _verify_telemetry_attestation(
+                appeal_evidence, l.challenge_nonce, l.session_id, host_str, self.authorized_machines
+            )
+            if not passed:
+                return data.get("appeal_verdict") == "APPEAL_DISMISSED"
+            return data.get("appeal_verdict") in [
+                "APPEAL_UPHELD_VERIFIED",
+                "APPEAL_UPHELD_FRAUDULENT",
+                "APPEAL_UPHELD_DEGRADED",
+                "APPEAL_DISMISSED",
+            ]
 
-                app_verdict = str(parsed.get("appeal_verdict") or parsed.get("verdict", "APPEAL_DISMISSED")).strip().upper()
-                if app_verdict in ["APPEAL_REJECTED", "APPEAL_DISMISSED"]:
-                    app_verdict = "APPEAL_DISMISSED"
-                app_reason = str(parsed.get("reason", "Supreme tribunal adjudication concluded."))[:200]
-                app_conf = int(parsed.get("confidence", 95))
-            except Exception as e:
-                app_verdict = "APPEAL_DISMISSED"
-                app_reason = f"Tribunal consensus error: {str(e)[:150]}"
+        try:
+            tribunal_res = _run_nondet(leader_fn, validator_fn)
+            if not isinstance(tribunal_res, dict):
+                tribunal_res = {}
+            app_verdict = str(tribunal_res.get("appeal_verdict", "APPEAL_DISMISSED")).strip().upper()
+            app_reason = str(tribunal_res.get("reason", "Supreme tribunal adjudication concluded."))[:200]
+            app_conf = int(tribunal_res.get("confidence", 95))
+        except Exception as e:
+            app_verdict = "APPEAL_DISMISSED"
+            app_reason = f"Tribunal consensus error: {str(e)[:150]}"
+            app_conf = 95
 
         escrow_val = int(l.escrow_amount)
         bond_val = int(l.dispute_bond)
         l.confidence = u8(max(0, min(100, app_conf)))
-        self.total_compute_locked = self.total_compute_locked - l.escrow_amount
+        total_release = l.escrow_amount + l.dispute_bond
+        if self.total_compute_locked >= total_release:
+            self.total_compute_locked = self.total_compute_locked - total_release
+        else:
+            self.total_compute_locked = u256(0)
 
         # Determine winner/loser and route funds safely
         # Note: Initial verdict and initial status are PRESERVED!
