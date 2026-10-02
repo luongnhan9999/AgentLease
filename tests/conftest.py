@@ -90,14 +90,18 @@ class MockWeb:
 
 class MockGenVM:
     Return = MockReturn
+    UserError = Exception
 
-    def run_nondet(self, leader_fn, validator_fn):
+    def run_nondet_unsafe(self, leader_fn, validator_fn):
         leader_res = leader_fn()
         ret = MockReturn(leader_res)
         valid = validator_fn(ret)
         if not valid:
             raise RuntimeError("Consensus validator rejected leader output")
         return leader_res
+
+    def run_nondet(self, leader_fn, validator_fn):
+        return self.run_nondet_unsafe(leader_fn, validator_fn)
 
 
 class MockPublicWrite:

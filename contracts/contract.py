@@ -3,9 +3,6 @@ from genlayer import *
 from dataclasses import dataclass
 import json
 
-if not hasattr(gl, "UserError"):
-    gl.UserError = getattr(gl.vm, "UserError", Exception)
-
 CANARY_TOKEN = "CANARY_AGENT_LEASE_V2"
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 COOLING_OFF_SECONDS = u256(300)       # 5 minutes challenge / cooling-off window (manipulation-resistant)
@@ -41,7 +38,7 @@ def _current_timestamp() -> u256:
                     return u256(ts)
     except Exception:
         pass
-    raise gl.UserError("Trusted execution timestamp unavailable from runtime context.")
+    raise gl.vm.UserError("Trusted execution timestamp unavailable from runtime context.")
 
 
 def _fetch_web(url: str) -> str:
@@ -84,9 +81,9 @@ def _exec_ai_prompt(prompt: str) -> dict:
 
 
 def _run_nondet(leader_fn, validator_fn):
-    """Executes leader-validator consensus with graceful fallback."""
-    if hasattr(gl, "vm") and hasattr(gl.vm, "run_nondet"):
-        return gl.vm.run_nondet(leader_fn, validator_fn)
+    """Executes leader-validator consensus via run_nondet_unsafe (production API)."""
+    if hasattr(gl, "vm") and hasattr(gl.vm, "run_nondet_unsafe"):
+        return gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
     leader_res = leader_fn()
     class _DummyRet:
         def __init__(self, c):
@@ -316,17 +313,17 @@ class Contract(gl.Contract):
         sender_str = _addr_str(gl.message.sender).lower()
         owner_str = _addr_str(self.owner).lower()
         if sender_str != owner_str:
-            raise gl.UserError("Only contract owner can enroll authorized hardware machines.")
+            raise gl.vm.UserError("Only contract owner can enroll authorized hardware machines.")
         
         clean_id = str(machine_id).strip()
         clean_spec = str(hardware_spec).strip()
         clean_n = str(pubkey_n).strip()
         if not clean_id or len(clean_id) < 3:
-            raise gl.UserError("Invalid machine identifier.")
+            raise gl.vm.UserError("Invalid machine identifier.")
         if not clean_spec:
-            raise gl.UserError("Invalid hardware specification.")
+            raise gl.vm.UserError("Invalid hardware specification.")
         if not clean_n or not clean_n.isdigit() or int(clean_n) <= 0:
-            raise gl.UserError("Invalid RSA public key modulus.")
+            raise gl.vm.UserError("Invalid RSA public key modulus.")
 
         current_time = _current_timestamp()
         if clean_id not in self.authorized_machines:
@@ -344,7 +341,7 @@ class Contract(gl.Contract):
     @gl.public.view
     def get_authorized_machine(self, machine_id: str) -> str:
         if machine_id not in self.authorized_machines:
-            raise gl.UserError("Machine not found in authorized hardware registry.")
+            raise gl.vm.UserError("Machine not found in authorized hardware registry.")
         m = self.authorized_machines[machine_id]
         return json.dumps({
             "machine_id": m.machine_id,
@@ -374,11 +371,11 @@ class Contract(gl.Contract):
     def create_lease_order(self, hardware_spec: str, duration_seconds: int = 86400) -> str:
         escrow = bigint(gl.message.value)
         if escrow <= bigint(0):
-            raise gl.UserError("Lease rental escrow must be greater than 0 GEN.")
+            raise gl.vm.UserError("Lease rental escrow must be greater than 0 GEN.")
 
         clean_spec = str(hardware_spec).strip()
         if not clean_spec or len(clean_spec) < 10:
-            raise gl.UserError("Hardware specification requirements must be at least 10 characters.")
+            raise gl.vm.UserError("Hardware specification requirements must be at least 10 characters.")
 
         dur = u256(duration_seconds if duration_seconds > 0 else 86400)
         current_time = _current_timestamp()
@@ -422,19 +419,19 @@ class Contract(gl.Contract):
     @gl.public.write
     def claim_lease(self, lease_id: str) -> None:
         if lease_id not in self.leases:
-            raise gl.UserError("Lease order not found.")
+            raise gl.vm.UserError("Lease order not found.")
 
         l = self.leases[lease_id]
         if l.status != u8(0):
-            raise gl.UserError("Lease order is not in OPEN status.")
+            raise gl.vm.UserError("Lease order is not in OPEN status.")
 
         current_time = _current_timestamp()
         if current_time >= l.expires_at_time:
-            raise gl.UserError("Lease order has expired.")
+            raise gl.vm.UserError("Lease order has expired.")
 
         sender = gl.message.sender
         if _addr_str(sender).lower() == _addr_str(l.renter).lower():
-            raise gl.UserError("Renter cannot claim their own lease order as host.")
+            raise gl.vm.UserError("Renter cannot claim their own lease order as host.")
 
         l.host = sender
         l.reason = f"Claimed by host {_addr_str(sender)}. Awaiting benchmark telemetry proof."
@@ -444,11 +441,11 @@ class Contract(gl.Contract):
     def submit_hardware_proof(self, lease_id: str, benchmark_log_url: str) -> None:
         """Host commits benchmark log proof URL for audit (enters IN_AUDIT status 1)."""
         if lease_id not in self.leases:
-            raise gl.UserError("Lease order not found.")
+            raise gl.vm.UserError("Lease order not found.")
 
         l = self.leases[lease_id]
         if l.status != u8(0):
-            raise gl.UserError("Lease order is not open for telemetry submission.")
+            raise gl.vm.UserError("Lease order is not open for telemetry submission.")
 
         sender = gl.message.sender
         host_str = _addr_str(l.host)
@@ -456,11 +453,11 @@ class Contract(gl.Contract):
             l.host = sender
             host_str = _addr_str(sender)
         elif host_str.lower() != _addr_str(sender).lower():
-            raise gl.UserError("Only designated host can submit benchmark proofs.")
+            raise gl.vm.UserError("Only designated host can submit benchmark proofs.")
 
         clean_url = str(benchmark_log_url).strip()
         if not clean_url or len(clean_url) < 8:
-            raise gl.UserError("Invalid benchmark telemetry URL.")
+            raise gl.vm.UserError("Invalid benchmark telemetry URL.")
 
         current_time = _current_timestamp()
         l.benchmark_log_url = clean_url
@@ -473,11 +470,11 @@ class Contract(gl.Contract):
     def adjudicate_hardware(self, lease_id: str) -> None:
         """Executes intelligent consensus audit and asymmetric attestation verification on submitted telemetry."""
         if lease_id not in self.leases:
-            raise gl.UserError("Lease order not found.")
+            raise gl.vm.UserError("Lease order not found.")
 
         l = self.leases[lease_id]
         if l.status != u8(1):
-            raise gl.UserError("Lease order is not in audit status.")
+            raise gl.vm.UserError("Lease order is not in audit status.")
 
         host_str = _addr_str(l.host)
         clean_url = l.benchmark_log_url
@@ -602,16 +599,16 @@ Respond with ONLY a raw JSON object:
         Preserves manipulation resistance and protects against appeal bypass.
         """
         if lease_id not in self.leases:
-            raise gl.UserError("Lease order not found.")
+            raise gl.vm.UserError("Lease order not found.")
 
         l = self.leases[lease_id]
         if l.status != u8(7):  # Must be AUDIT_COMPLETED
-            raise gl.UserError("Lease is not awaiting final settlement (must be AUDIT_COMPLETED).")
+            raise gl.vm.UserError("Lease is not awaiting final settlement (must be AUDIT_COMPLETED).")
 
         current_time = _current_timestamp()
         if current_time <= (l.audit_completed_time + COOLING_OFF_SECONDS):
             remaining = int((l.audit_completed_time + COOLING_OFF_SECONDS) - current_time)
-            raise gl.UserError(f"Appeal cooling-off window is still active ({remaining}s remaining).")
+            raise gl.vm.UserError(f"Appeal cooling-off window is still active ({remaining}s remaining).")
 
         escrow_val = int(l.escrow_amount)
         if self.total_compute_locked >= l.escrow_amount:
@@ -646,7 +643,7 @@ Respond with ONLY a raw JSON object:
             gl.get_contract_at(l.renter).emit_transfer(value=u256(escrow_val))
 
         else:
-            raise gl.UserError(f"Invalid settlement verdict: {l.verdict}")
+            raise gl.vm.UserError(f"Invalid settlement verdict: {l.verdict}")
 
     @gl.public.write.payable
     def appeal_verdict(self, lease_id: str, new_evidence_url: str) -> None:
@@ -655,15 +652,15 @@ Respond with ONLY a raw JSON object:
         by staking an equal dispute bond.
         """
         if lease_id not in self.leases:
-            raise gl.UserError("Lease order not found.")
+            raise gl.vm.UserError("Lease order not found.")
 
         l = self.leases[lease_id]
         if l.status != u8(7):
-            raise gl.UserError("Only completed audits (status 7) can be appealed.")
+            raise gl.vm.UserError("Only completed audits (status 7) can be appealed.")
 
         current_time = _current_timestamp()
         if current_time > (l.audit_completed_time + COOLING_OFF_SECONDS):
-            raise gl.UserError("Dispute window expired. Verdict is final.")
+            raise gl.vm.UserError("Dispute window expired. Verdict is final.")
 
         sender = gl.message.sender
         sender_str = _addr_str(sender).lower()
@@ -671,16 +668,16 @@ Respond with ONLY a raw JSON object:
         host_str = _addr_str(l.host).lower()
 
         if sender_str != renter_str and sender_str != host_str:
-            raise gl.UserError("Only renter or host can appeal the verdict.")
+            raise gl.vm.UserError("Only renter or host can appeal the verdict.")
 
         bond = bigint(gl.message.value)
         min_bond = l.escrow_amount // bigint(10)
         if bond < min_bond or bond <= bigint(0):
-            raise gl.UserError("Dispute bond must be at least 10% of the escrow amount.")
+            raise gl.vm.UserError("Dispute bond must be at least 10% of the escrow amount.")
 
         clean_url = str(new_evidence_url).strip()
         if not clean_url or len(clean_url) < 8:
-            raise gl.UserError("Must provide valid new telemetry evidence URL.")
+            raise gl.vm.UserError("Must provide valid new telemetry evidence URL.")
 
         l.dispute_initiator = sender
         l.dispute_bond = bond
@@ -698,11 +695,11 @@ Respond with ONLY a raw JSON object:
         preserving initial_verdict and initial_status across every appeal outcome.
         """
         if lease_id not in self.leases:
-            raise gl.UserError("Lease order not found.")
+            raise gl.vm.UserError("Lease order not found.")
 
         l = self.leases[lease_id]
         if l.status != u8(6):  # Must be DISPUTED
-            raise gl.UserError("Lease is not under dispute.")
+            raise gl.vm.UserError("Lease is not under dispute.")
 
         host_str = _addr_str(l.host)
         renter_str = _addr_str(l.renter)
@@ -885,13 +882,13 @@ OUTPUT FORMAT (JSON ONLY):
         or if audit stalled past STALL_TIMEOUT_SECONDS (1 hour).
         """
         if lease_id not in self.leases:
-            raise gl.UserError("Lease order not found.")
+            raise gl.vm.UserError("Lease order not found.")
 
         l = self.leases[lease_id]
         sender_str = _addr_str(gl.message.sender).lower()
         renter_str = _addr_str(l.renter).lower()
         if sender_str != renter_str:
-            raise gl.UserError("Only the compute renter can cancel or reclaim the lease.")
+            raise gl.vm.UserError("Only the compute renter can cancel or reclaim the lease.")
 
         current_time = _current_timestamp()
 
@@ -917,7 +914,7 @@ OUTPUT FORMAT (JSON ONLY):
             gl.get_contract_at(l.renter).emit_transfer(value=u256(escrow_val))
             return
 
-        raise gl.UserError("Order cannot be cancelled: lease duration has not yet expired and audit is not stalled.")
+        raise gl.vm.UserError("Order cannot be cancelled: lease duration has not yet expired and audit is not stalled.")
 
     @gl.public.write
     def cancel_or_reclaim(self, lease_id: str) -> None:
@@ -930,7 +927,7 @@ OUTPUT FORMAT (JSON ONLY):
     @gl.public.view
     def get_lease(self, lease_id: str) -> str:
         if lease_id not in self.leases:
-            raise gl.UserError("Lease order not found.")
+            raise gl.vm.UserError("Lease order not found.")
         l = self.leases[lease_id]
         data = {
             "lease_id": l.lease_id,
@@ -1058,5 +1055,5 @@ OUTPUT FORMAT (JSON ONLY):
     @gl.public.view
     def get_lease_id_by_index(self, index: int) -> str:
         if index < 0 or index >= len(self.lease_ids):
-            raise gl.UserError("Index out of bounds.")
+            raise gl.vm.UserError("Index out of bounds.")
         return self.lease_ids[index]
