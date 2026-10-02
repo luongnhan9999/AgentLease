@@ -32,6 +32,8 @@ def setup_gl_mock(mock_env):
             instance = super().__new__(cls)
             instance.leases = {}
             instance.lease_ids = []
+            instance.authorized_machines = {}
+            instance.authorized_machine_ids = []
             return instance
 
     mock_env.Contract = ContractStorageBase
@@ -180,7 +182,7 @@ def test_fresh_challenge_and_signed_telemetry_verifications(mock_gl_env):
     app.adjudicate_hardware(lid_unbound)
     u_lease = json.loads(app.get_lease(lid_unbound))
     assert u_lease["verdict"] == "HARDWARE_FRAUDULENT"
-    assert "Telemetry unbound" in u_lease["reason"]
+    assert "SESSION_UNBOUND" in u_lease["reason"]
 
     # C. Unauthenticated source / Invalid signature
     mock_gl_env.message.sender_address = renter_addr
@@ -201,31 +203,35 @@ def test_fresh_challenge_and_signed_telemetry_verifications(mock_gl_env):
 
 
 # =============================================================================
-# TEST 3: Cryptographic Attestation Seal & Machine Origin Verification
+# TEST 3: Asymmetric Machine Origin & Unforgeable Attestation Verification
 # =============================================================================
 def test_cryptographic_attestation_seal_and_machine_origin_verification(mock_gl_env):
     setup_gl_mock(mock_gl_env)
     import contract
     contract.gl = mock_gl_env
 
+    owner_addr = SimulatedAddress("0x9999111122223333444455556666777788889999")
+    mock_gl_env.message.sender_address = owner_addr
     app = contract.Contract()
+
     renter_addr = SimulatedAddress("0xAAAA111122223333444455556666777788889999")
     host_addr = SimulatedAddress("0xBBBB111122223333444455556666777788889999")
 
+    # 1. Verify pre-enrolled authorized hardware registry
+    all_machines = json.loads(app.get_all_authorized_machines())
+    assert len(all_machines) >= 2
+    machine_ids = [m["machine_id"] for m in all_machines]
+    assert "NODE-GPU-H100-US-EAST-42" in machine_ids
+    assert "NODE-GPU-A100-EU-WEST-01" in machine_ids
+
+    # 2. Authentic enrolled machine with genuine digital signature -> VERIFIED
     mock_gl_env.message.sender_address = renter_addr
     mock_gl_env.message.value = 5_000_000_000_000_000_000
     lid = app.create_lease_order("NVIDIA H100 80GB SXM5", 86400)
     l_data = json.loads(app.get_lease(lid))
-
     nonce = l_data["challenge_nonce"]
     session = l_data["session_id"]
 
-    # Verify public helper produces exact same seal
-    expected_seal = app.compute_machine_attestation_seal(nonce, session, "NODE-GPU-H100-US-EAST-42", str(host_addr))
-    computed_seal = make_attestation_seal(nonce, session, "NODE-GPU-H100-US-EAST-42", host_addr)
-    assert expected_seal == computed_seal
-
-    # Submit validly signed telemetry
     mock_gl_env.message.sender_address = host_addr
     valid_url = "https://host.com/valid_signed.log"
     mock_gl_env.nondet.web.mock_responses[valid_url] = make_benchmark_log(nonce, session, host_addr)
@@ -235,6 +241,57 @@ def test_cryptographic_attestation_seal_and_machine_origin_verification(mock_gl_
     audited = json.loads(app.get_lease(lid))
     assert audited["verdict"] == "HARDWARE_VERIFIED"
     assert audited["status"] == 7  # AUDIT_COMPLETED
+
+    # 3. Forged / Unregistered Machine ID by host -> IMMEDIATELY REJECTED
+    mock_gl_env.message.sender_address = renter_addr
+    mock_gl_env.message.value = 5_000_000_000_000_000_000
+    lid_forged = app.create_lease_order("NVIDIA H100 80GB SXM5", 86400)
+    l_forged = json.loads(app.get_lease(lid_forged))
+
+    mock_gl_env.message.sender_address = host_addr
+    forged_url = "https://host.com/forged_machine.log"
+    mock_gl_env.nondet.web.mock_responses[forged_url] = make_benchmark_log(
+        l_forged["challenge_nonce"], l_forged["session_id"], host_addr,
+        machine_id="FAKE-GPU-H100-UNREGISTERED-NODE"
+    )
+    app.submit_hardware_proof(lid_forged, forged_url)
+    app.adjudicate_hardware(lid_forged)
+
+    forged_lease = json.loads(app.get_lease(lid_forged))
+    assert forged_lease["verdict"] == "HARDWARE_FRAUDULENT"
+    assert "UNREGISTERED_MACHINE_ORIGIN" in forged_lease["reason"]
+
+    # 4. Enrolled Machine ID with Forged/Mismatched Digital Signature -> IMMEDIATELY REJECTED
+    mock_gl_env.message.sender_address = renter_addr
+    mock_gl_env.message.value = 5_000_000_000_000_000_000
+    lid_bad_sig = app.create_lease_order("NVIDIA H100 80GB SXM5", 86400)
+    l_bad = json.loads(app.get_lease(lid_bad_sig))
+
+    mock_gl_env.message.sender_address = host_addr
+    bad_sig_url = "https://host.com/bad_signature.log"
+    mock_gl_env.nondet.web.mock_responses[bad_sig_url] = make_benchmark_log(
+        l_bad["challenge_nonce"], l_bad["session_id"], host_addr,
+        machine_id="NODE-GPU-H100-US-EAST-42", is_valid_signature=False
+    )
+    app.submit_hardware_proof(lid_bad_sig, bad_sig_url)
+    app.adjudicate_hardware(lid_bad_sig)
+
+    bad_lease = json.loads(app.get_lease(lid_bad_sig))
+    assert bad_lease["verdict"] == "HARDWARE_FRAUDULENT"
+    assert "INVALID_HARDWARE_SIGNATURE" in bad_lease["reason"]
+
+    # 5. Contract Owner can register new authorized hardware cluster
+    mock_gl_env.message.sender_address = owner_addr
+    new_n = "111222333444555666777888999000111222333"
+    app.register_authorized_machine("NODE-GPU-H200-SXM-01", "NVIDIA H200 141GB HBM3e", new_n, 65537)
+    new_m = json.loads(app.get_authorized_machine("NODE-GPU-H200-SXM-01"))
+    assert new_m["machine_id"] == "NODE-GPU-H200-SXM-01"
+    assert new_m["pubkey_n"] == new_n
+
+    # 6. Non-owner cannot register machines
+    mock_gl_env.message.sender_address = host_addr
+    with pytest.raises(Exception, match="Only contract owner"):
+        app.register_authorized_machine("HACKED-NODE", "Fake spec", new_n, 65537)
 
 
 # =============================================================================

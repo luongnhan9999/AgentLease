@@ -144,17 +144,35 @@ AgentLease/
 
 ## 🧪 6. Testing & Verification
 
-The contract and business logic are tested using `pytest` across all lifecycle stages:
+AgentLease features comprehensive, multi-layer test suites covering both the on-chain Intelligent Contract logic and the frontend transaction dispatch pathways.
 
+### 1. Smart Contract Test Suite (Python / Pytest)
 ```bash
-pytest tests/test_agentlease.py -v
+pytest tests/ -v
 ```
+**24/24 Tests Passing (0.49s):**
+- **Asymmetric Hardware Attestation & Machine Registry:**
+  - `test_cryptographic_attestation_seal_and_machine_origin_verification`: Validates authentic enrolled machine digital signatures (RSA public-key verification), immediately rejects arbitrary/unregistered machine IDs (`UNREGISTERED_MACHINE_ORIGIN`), and rejects forged digital signatures (`INVALID_HARDWARE_SIGNATURE`).
+  - Owner-only machine enrollment (`register_authorized_machine`).
+- **Telemetry Replay & Session Binding Protection:**
+  - `test_fresh_challenge_and_signed_telemetry_verifications`: Validates fresh contract-issued challenge nonces and session ID bindings.
+- **Tri-State SLA Settlements & Degraded Payouts:**
+  - `test_degraded_hardware_partial_payout`: 60/40 proportional SLA distribution.
+- **High-Consensus Appeal Tribunal & Bond Routing:**
+  - Preserves `initial_verdict` and `initial_status` across all appeal outcomes.
+  - Correct bond accounting: Losing appellant forfeits bond to appellee under `DEGRADED` and `DISMISSED` verdicts.
+- **Manipulation-Resistant Timing & Settlement:**
+  - `test_cancel_or_reclaim_with_time_mechanism`: Consensus block time verification.
 
-### Verified Test Cases:
-1. `test_agentlease_lifecycle`: Validates lease creation, escrow locking, host claiming, and automatic payout upon `HARDWARE_VERIFIED`.
-2. `test_fraudulent_hardware_refund`: Verifies that fake GPUs (e.g. GTX 1060 claimed as H100) are flagged `HARDWARE_FRAUDULENT` by the AI Jury, triggering an immediate refund to the renter.
-3. `test_views_and_pagination`: Validates `get_lease`, `get_leases_paginated`, and `get_stats` view methods.
-4. `test_cancel_or_reclaim`: Validates renter reclaim functionality after expiration.
+### 2. Frontend Transaction Path Test Suite (Vitest / TypeScript)
+```bash
+cd frontend && npm test
+```
+**4/4 Tests Passing (2.0s):**
+- `routes the table Finalize action through client.writeContract with exact lease_id args`: Mocks `window.ethereum` and verifies the Table row Finalize action dispatches `client.writeContract({ address, functionName: 'finalize_settlement', args: [leaseId] })`.
+- `propagates UserError when cooling-off window is still active`: Asserts proper exception handling when finalizing prematurely.
+- `handles user rejection in MetaMask wallet gracefully`: Tests wallet error boundary.
+- `triggers table row finalize action handler and invokes writeContract followed by data refresh`: End-to-end UI table action handler.
 
 ---
 

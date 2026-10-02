@@ -6,20 +6,40 @@ import hashlib
 from datetime import datetime, timezone, timedelta
 
 
-def make_attestation_seal(nonce, session, machine_id, host):
+NODE1_N = int("125055803882412125793798903957061541086038124808870145340309304240497505012993063966826369949569636089119480847968092992887695534482661759338099546048270618290086607841041853145773041742645874366533360307275069872743853431029796621068136392281380553860007141252785422007529758653944575564961465665435431923543")
+NODE1_D = int("13961451267828077580470502371980717390372547006803788649769286703586880871544307053378696107506973222028129680500580543275223242758006549061198432619535730861908604660362064437258312747897159846080409114895122476697944506677893846659992505692025125916464976618543035613608369725714871637900975341814208747073")
+
+NODE2_N = int("127227212864879978306604942755329668212275970031013386804284296302672325908047306442701140653903325514639921795391935974039658915601921849571809057562854571499081411613385239513967628692422333295731256544765986716367788568840156421717104283661114809757272718078032796785527862603990226384737603934434466793217")
+NODE2_D = int("12902631595965892027672329011176193960119714059460710724038711565049876865085339828770126702680725622432593957960359468078457024660630229228494322672067952485660698654679252283608367907492085320620195213565948824518064911826478645788754253300083971173880954783188075756029111244900186355307621478047119455593")
+
+
+def make_machine_signature(nonce, session, machine_id, host):
     canonical = f"{nonce.strip()}:{session.strip()}:{machine_id.strip()}:{str(host).strip().lower()}"
-    salt = b"GENLAYER_AGENT_LEASE_TRUSTED_DAEMON_V2"
-    return hmac.new(salt, canonical.encode("utf-8"), hashlib.sha256).hexdigest()
+    if machine_id == "NODE-GPU-H100-US-EAST-42":
+        n, d = NODE1_N, NODE1_D
+    elif machine_id == "NODE-GPU-A100-EU-WEST-01":
+        n, d = NODE2_N, NODE2_D
+    else:
+        # Fallback dummy for unregistered machines
+        n, d = NODE1_N, 123456789
+    digest_int = int.from_bytes(hashlib.sha256(canonical.encode("utf-8")).digest(), "big") % n
+    sig_int = pow(digest_int, d, n)
+    return hex(sig_int)
+
+
+# Backward compatibility alias
+def make_attestation_seal(nonce, session, machine_id, host):
+    return make_machine_signature(nonce, session, machine_id, host)
 
 
 def make_benchmark_log(nonce, session, host, machine_id="NODE-GPU-H100-US-EAST-42", model="NVIDIA H100 80GB HBM3", tflops=989.4, vram=81920, is_valid_signature=True):
-    seal = make_attestation_seal(nonce, session, machine_id, host) if is_valid_signature else "deadbeef0000111122223333444455556666777788889999aaaabbbbccccdddd"
+    sig = make_machine_signature(nonce, session, machine_id, host) if is_valid_signature else "0xdeadbeef0000111122223333444455556666777788889999aaaabbbbccccdddd"
     return f"""[SOVEREIGN COMPUTE BENCHMARK DAEMON v2.4]
 Contract Challenge Nonce: {nonce}
 Bound Session ID: {session}
 Machine ID: {machine_id}
 Designated Host: {str(host)}
-Cryptographic Attestation Seal: {seal}
+Attestation Signature: {sig}
 Device 0: {model}
 Device ID: 0x2330
 VRAM Total: {vram} MiB
@@ -37,6 +57,14 @@ class MockMessage:
     def __init__(self, sender_address="0x1111111111111111111111111111111111111111", value=0):
         self.sender_address = sender_address
         self.value = value
+
+    @property
+    def sender(self):
+        return self.sender_address
+
+    @sender.setter
+    def sender(self, val):
+        self.sender_address = val
 
 
 class MockTransferContract:
@@ -207,6 +235,8 @@ class MockGenLayerEnv:
             }
 
         self.nondet.exec_prompt = _exec_prompt
+        self.get_web_page = lambda url: self.nondet.web.render(url)
+        self.exec_prompt = _exec_prompt
 
     def advance_time(self, seconds: int):
         """Advances consensus block time deterministically."""

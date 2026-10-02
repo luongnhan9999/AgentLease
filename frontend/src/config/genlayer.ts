@@ -23,11 +23,16 @@ const STORAGE_KEY_CONTRACT = 'agentlease_contract_address';
 export const DEFAULT_CONTRACT_ADDRESS = '0x8137D5819a29780D8f7215cbb780107E7648152a';
 
 export function getContractAddress(): string {
-  return localStorage.getItem(STORAGE_KEY_CONTRACT) || (import.meta as any).env?.VITE_AGENTLEASE_CONTRACT_ADDRESS || DEFAULT_CONTRACT_ADDRESS;
+  if (typeof window !== 'undefined' && window.localStorage) {
+    return window.localStorage.getItem(STORAGE_KEY_CONTRACT) || (import.meta as any).env?.VITE_AGENTLEASE_CONTRACT_ADDRESS || DEFAULT_CONTRACT_ADDRESS;
+  }
+  return (import.meta as any).env?.VITE_AGENTLEASE_CONTRACT_ADDRESS || DEFAULT_CONTRACT_ADDRESS;
 }
 
 export function setContractAddress(address: string): void {
-  localStorage.setItem(STORAGE_KEY_CONTRACT, address.trim());
+  if (typeof window !== 'undefined' && window.localStorage) {
+    window.localStorage.setItem(STORAGE_KEY_CONTRACT, address.trim());
+  }
 }
 
 // GenLayer Client using official SDK configured for StudioNet with optional MetaMask provider
