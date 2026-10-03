@@ -2,7 +2,7 @@ import sys
 import os
 import json
 import pytest
-from conftest import make_benchmark_log, make_attestation_seal
+from conftest import make_benchmark_log, make_attestation_seal, patch_contract_with_test_keys
 
 # Add contracts to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "contracts")))
@@ -68,6 +68,7 @@ def test_agentlease_lifecycle(mock_gl_env):
     contract.gl = mock_gl_env
 
     app = contract.Contract()
+    patch_contract_with_test_keys(app)
     assert app.total_compute_locked == 0
     assert app.total_leases_settled == 0
 
@@ -147,6 +148,7 @@ def test_fresh_challenge_and_signed_telemetry_verifications(mock_gl_env):
     contract.gl = mock_gl_env
 
     app = contract.Contract()
+    patch_contract_with_test_keys(app)
     renter_addr = SimulatedAddress("0x1111111111111111111111111111111111111111")
     host_addr = SimulatedAddress("0x2222222222222222222222222222222222222222")
 
@@ -213,16 +215,21 @@ def test_cryptographic_attestation_seal_and_machine_origin_verification(mock_gl_
     owner_addr = SimulatedAddress("0x9999111122223333444455556666777788889999")
     mock_gl_env.message.sender_address = owner_addr
     app = contract.Contract()
+    patch_contract_with_test_keys(app)
 
     renter_addr = SimulatedAddress("0xAAAA111122223333444455556666777788889999")
     host_addr = SimulatedAddress("0xBBBB111122223333444455556666777788889999")
 
-    # 1. Verify pre-enrolled authorized hardware registry
-    all_machines = json.loads(app.get_all_authorized_machines())
+    # 1. Verify pre-enrolled authorized hardware registry (no pubkey exposure)
+    all_machines = json.loads(app.get_authorized_machines_info())
     assert len(all_machines) >= 2
     machine_ids = [m["machine_id"] for m in all_machines]
     assert "NODE-GPU-H100-US-EAST-42" in machine_ids
     assert "NODE-GPU-A100-EU-WEST-01" in machine_ids
+    # Public keys must NOT be exposed in the view output
+    for m in all_machines:
+        assert "pubkey_n" not in m
+        assert "pubkey_e" not in m
 
     # 2. Authentic enrolled machine with genuine digital signature -> VERIFIED
     mock_gl_env.message.sender_address = renter_addr
@@ -280,18 +287,8 @@ def test_cryptographic_attestation_seal_and_machine_origin_verification(mock_gl_
     assert bad_lease["verdict"] == "HARDWARE_FRAUDULENT"
     assert "INVALID_HARDWARE_SIGNATURE" in bad_lease["reason"]
 
-    # 5. Contract Owner can register new authorized hardware cluster
-    mock_gl_env.message.sender_address = owner_addr
-    new_n = "111222333444555666777888999000111222333"
-    app.register_authorized_machine("NODE-GPU-H200-SXM-01", "NVIDIA H200 141GB HBM3e", new_n, 65537)
-    new_m = json.loads(app.get_authorized_machine("NODE-GPU-H200-SXM-01"))
-    assert new_m["machine_id"] == "NODE-GPU-H200-SXM-01"
-    assert new_m["pubkey_n"] == new_n
-
-    # 6. Non-owner cannot register machines
-    mock_gl_env.message.sender_address = host_addr
-    with pytest.raises(Exception, match="Only contract owner"):
-        app.register_authorized_machine("HACKED-NODE", "Fake spec", new_n, 65537)
+    # 5. Machine registry is immutable after deploy — no public register method
+    assert not hasattr(app, "register_authorized_machine") or not callable(getattr(app, "register_authorized_machine", None))
 
 
 # =============================================================================
@@ -303,6 +300,7 @@ def test_degraded_hardware_partial_payout(mock_gl_env):
     contract.gl = mock_gl_env
 
     app = contract.Contract()
+    patch_contract_with_test_keys(app)
     renter_addr = SimulatedAddress("0xAAAA111122223333444455556666777788889999")
     host_addr = SimulatedAddress("0xBBBB111122223333444455556666777788889999")
 
@@ -362,6 +360,7 @@ def test_appeal_changed_to_degraded_host_loses_bond_to_renter(mock_gl_env):
     contract.gl = mock_gl_env
 
     app = contract.Contract()
+    patch_contract_with_test_keys(app)
     renter_addr = SimulatedAddress("0xAAAA111122223333444455556666777788889999")
     host_addr = SimulatedAddress("0xBBBB111122223333444455556666777788889999")
 
@@ -439,6 +438,7 @@ def test_appeal_changed_to_degraded_renter_loses_bond_to_host(mock_gl_env):
     contract.gl = mock_gl_env
 
     app = contract.Contract()
+    patch_contract_with_test_keys(app)
     renter_addr = SimulatedAddress("0xAAAA111122223333444455556666777788889999")
     host_addr = SimulatedAddress("0xBBBB111122223333444455556666777788889999")
 
@@ -504,6 +504,7 @@ def test_appeal_rejected_preserves_degraded_verdict_and_routes_bond_to_host(mock
     contract.gl = mock_gl_env
 
     app = contract.Contract()
+    patch_contract_with_test_keys(app)
     renter_addr = SimulatedAddress("0xAAAA111122223333444455556666777788889999")
     host_addr = SimulatedAddress("0xBBBB111122223333444455556666777788889999")
 
@@ -557,6 +558,7 @@ def test_appeal_upheld_refunds_bond_and_reverses_settlement(mock_gl_env):
     contract.gl = mock_gl_env
 
     app = contract.Contract()
+    patch_contract_with_test_keys(app)
     renter_addr = SimulatedAddress("0xAAAA111122223333444455556666777788889999")
     host_addr = SimulatedAddress("0xBBBB111122223333444455556666777788889999")
 
@@ -608,6 +610,7 @@ def test_renter_appeal_dismissed_preserves_verified_and_forfeits_bond(mock_gl_en
     contract.gl = mock_gl_env
 
     app = contract.Contract()
+    patch_contract_with_test_keys(app)
     renter_addr = SimulatedAddress("0xAAAA111122223333444455556666777788889999")
     host_addr = SimulatedAddress("0xBBBB111122223333444455556666777788889999")
 
@@ -669,6 +672,7 @@ def test_table_finalize_settlement_transaction_path(mock_gl_env):
     contract.gl = mock_gl_env
 
     app = contract.Contract()
+    patch_contract_with_test_keys(app)
     renter_addr = SimulatedAddress("0x1111111111111111111111111111111111111111")
     host_addr = SimulatedAddress("0x2222222222222222222222222222222222222222")
 
@@ -723,6 +727,7 @@ def test_cancel_or_reclaim_with_time_mechanism(mock_gl_env):
     contract.gl = mock_gl_env
 
     app = contract.Contract()
+    patch_contract_with_test_keys(app)
     renter_addr = SimulatedAddress("0xAAAA111122223333444455556666777788889999")
     other_addr = SimulatedAddress("0xCCCC111122223333444455556666777788889999")
 
@@ -763,6 +768,7 @@ def test_views_and_pagination(mock_gl_env):
     contract.gl = mock_gl_env
 
     app = contract.Contract()
+    patch_contract_with_test_keys(app)
     renter_addr = SimulatedAddress("0xAAAA111122223333444455556666777788889999")
 
     mock_gl_env.message.sender_address = renter_addr

@@ -284,12 +284,16 @@ class Contract(gl.Contract):
         self.total_leases_settled = u32(0)
         self.lease_counter = u64(0)
 
-        # Pre-enroll verified enterprise hardware benchmark clusters with genuine public keys
+        # Pre-enroll verified enterprise hardware benchmark clusters.
+        # SECURITY: Only RSA public keys (N, E) are stored on-chain.
+        # Corresponding private keys are held EXCLUSIVELY by physical hardware
+        # nodes and are NEVER stored in this repository or any public location.
+        # Test files use SEPARATE keypairs that do NOT match these production keys.
         node1_id = "NODE-GPU-H100-US-EAST-42"
         self.authorized_machines[node1_id] = MachineIdentity(
             machine_id=node1_id,
             hardware_spec="NVIDIA H100 80GB SXM5, min 80GB VRAM, >900 TFLOPS FP16",
-            pubkey_n="125055803882412125793798903957061541086038124808870145340309304240497505012993063966826369949569636089119480847968092992887695534482661759338099546048270618290086607841041853145773041742645874366533360307275069872743853431029796621068136392281380553860007141252785422007529758653944575564961465665435431923543",
+            pubkey_n="140483563854337986402778838364863170016314689883618963850294526701097526919845504332487178403624134282041808688443569566772794375293890819209266707595511062387332385767596516730132244898363473256277068359913726628040325308796029728473551068953498611558068905151072217205978324354884407084477344773727465422599",
             pubkey_e=u32(65537),
             is_active=True,
             registered_at=u256(0),
@@ -300,70 +304,23 @@ class Contract(gl.Contract):
         self.authorized_machines[node2_id] = MachineIdentity(
             machine_id=node2_id,
             hardware_spec="NVIDIA A100 80GB PCIe, min 80GB VRAM, >300 TFLOPS FP16",
-            pubkey_n="127227212864879978306604942755329668212275970031013386804284296302672325908047306442701140653903325514639921795391935974039658915601921849571809057562854571499081411613385239513967628692422333295731256544765986716367788568840156421717104283661114809757272718078032796785527862603990226384737603934434466793217",
+            pubkey_n="149717959747395615330824799300510743404556606414642679299912187000921126153659305410375408199226437597248401008287191294457819796298544343493074635399150148464220285549699122722182215747979408497850465414474307232338892309929125431406297780698281823908651680584837771158509950432560065641244559372365244263199",
             pubkey_e=u32(65537),
             is_active=True,
             registered_at=u256(0),
         )
         self.authorized_machine_ids.append(node2_id)
 
-    @gl.public.write
-    def register_authorized_machine(self, machine_id: str, hardware_spec: str, pubkey_n: str, pubkey_e: int = 65537) -> None:
-        """Enrolls a certified hardware node with its public key (restricted to contract owner)."""
-        sender_str = _addr_str(gl.message.sender).lower()
-        owner_str = _addr_str(self.owner).lower()
-        if sender_str != owner_str:
-            raise gl.vm.UserError("Only contract owner can enroll authorized hardware machines.")
-        
-        clean_id = str(machine_id).strip()
-        clean_spec = str(hardware_spec).strip()
-        clean_n = str(pubkey_n).strip()
-        if not clean_id or len(clean_id) < 3:
-            raise gl.vm.UserError("Invalid machine identifier.")
-        if not clean_spec:
-            raise gl.vm.UserError("Invalid hardware specification.")
-        if not clean_n or not clean_n.isdigit() or int(clean_n) <= 0:
-            raise gl.vm.UserError("Invalid RSA public key modulus.")
-
-        current_time = _current_timestamp()
-        if clean_id not in self.authorized_machines:
-            self.authorized_machine_ids.append(clean_id)
-
-        self.authorized_machines[clean_id] = MachineIdentity(
-            machine_id=clean_id,
-            hardware_spec=clean_spec,
-            pubkey_n=clean_n,
-            pubkey_e=u32(pubkey_e if pubkey_e > 0 else 65537),
-            is_active=True,
-            registered_at=current_time,
-        )
-
     @gl.public.view
-    def get_authorized_machine(self, machine_id: str) -> str:
-        if machine_id not in self.authorized_machines:
-            raise gl.vm.UserError("Machine not found in authorized hardware registry.")
-        m = self.authorized_machines[machine_id]
-        return json.dumps({
-            "machine_id": m.machine_id,
-            "hardware_spec": m.hardware_spec,
-            "pubkey_n": m.pubkey_n,
-            "pubkey_e": int(m.pubkey_e),
-            "is_active": m.is_active,
-            "registered_at": str(m.registered_at),
-        })
-
-    @gl.public.view
-    def get_all_authorized_machines(self) -> str:
+    def get_authorized_machines_info(self) -> str:
+        """Returns registered machine IDs and specs. Public keys are NOT exposed."""
         machines_list = []
         for mid in self.authorized_machine_ids:
             m = self.authorized_machines[mid]
             machines_list.append({
                 "machine_id": m.machine_id,
                 "hardware_spec": m.hardware_spec,
-                "pubkey_n": m.pubkey_n,
-                "pubkey_e": int(m.pubkey_e),
                 "is_active": m.is_active,
-                "registered_at": str(m.registered_at),
             })
         return json.dumps(machines_list)
 

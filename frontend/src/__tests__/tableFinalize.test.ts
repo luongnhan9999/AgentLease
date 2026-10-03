@@ -117,4 +117,88 @@ describe('Frontend Table Finalize writeContract Path', () => {
     });
     expect(mockFetchData).toHaveBeenCalledTimes(1);
   });
+
+  it('routes appeal_verdict and adjudicate_appeal through writeContract with bond forfeiture on DEGRADED', async () => {
+    // Step 1: appeal_verdict is a payable write call with bond value
+    const appealTxHash = '0xappeal1234567890abcdef1234567890abcdef1234567890abcdef1234567890';
+    mockWriteContract.mockResolvedValueOnce(appealTxHash);
+
+    const appealTx = await executeContractWrite(
+      'appeal_verdict',
+      ['lease-10', 'https://cdn.agentlease.io/appeal-evidence.txt'],
+      1000000000000000000n // 1 GEN bond
+    );
+    expect(appealTx).toBe(appealTxHash);
+    expect(mockWriteContract).toHaveBeenCalledWith({
+      address: DEFAULT_CONTRACT_ADDRESS,
+      functionName: 'appeal_verdict',
+      args: ['lease-10', 'https://cdn.agentlease.io/appeal-evidence.txt'],
+      value: 1000000000000000000n,
+    });
+
+    // Step 2: adjudicate_appeal triggered by any party
+    const adjTxHash = '0xadjudicate567890abcdef1234567890abcdef1234567890abcdef1234567890';
+    mockWriteContract.mockResolvedValueOnce(adjTxHash);
+
+    const adjTx = await executeContractWrite('adjudicate_appeal', ['lease-10']);
+    expect(adjTx).toBe(adjTxHash);
+    expect(mockWriteContract).toHaveBeenCalledWith({
+      address: DEFAULT_CONTRACT_ADDRESS,
+      functionName: 'adjudicate_appeal',
+      args: ['lease-10'],
+      value: 0n,
+    });
+
+    // Step 3: Verify readContract can fetch the settled lease to check bond routing
+    const settledLease = JSON.stringify({
+      lease_id: 'lease-10',
+      status: 5,
+      verdict: 'HARDWARE_DEGRADED',
+      initial_verdict: 'HARDWARE_FRAUDULENT',
+      dispute_bond: '1000000000000000000',
+    });
+    mockReadContract.mockResolvedValueOnce(settledLease);
+
+    const leaseData = JSON.parse(
+      await mockReadContract({ address: DEFAULT_CONTRACT_ADDRESS, functionName: 'get_lease', args: ['lease-10'] })
+    );
+    expect(leaseData.status).toBe(5); // SETTLED_PARTIAL
+    expect(leaseData.verdict).toBe('HARDWARE_DEGRADED');
+    expect(leaseData.initial_verdict).toBe('HARDWARE_FRAUDULENT');
+  });
+
+  it('routes submit_benchmark_and_verify through writeContract and rejects forged attestation via readContract', async () => {
+    // Step 1: Host submits telemetry proof with forged/invalid attestation
+    const submitTxHash = '0xsubmit1234567890abcdef1234567890abcdef1234567890abcdef1234567890';
+    mockWriteContract.mockResolvedValueOnce(submitTxHash);
+
+    const tx = await executeContractWrite(
+      'submit_benchmark_and_verify',
+      ['lease-20', 'https://cdn.agentlease.io/forged-telemetry.txt']
+    );
+    expect(tx).toBe(submitTxHash);
+    expect(mockWriteContract).toHaveBeenCalledWith({
+      address: DEFAULT_CONTRACT_ADDRESS,
+      functionName: 'submit_benchmark_and_verify',
+      args: ['lease-20', 'https://cdn.agentlease.io/forged-telemetry.txt'],
+      value: 0n,
+    });
+
+    // Step 2: Frontend reads lease to verify FRAUDULENT verdict from attestation rejection
+    const fraudLease = JSON.stringify({
+      lease_id: 'lease-20',
+      status: 7,
+      verdict: 'HARDWARE_FRAUDULENT',
+      reason: 'Cryptographic attestation failed: UNREGISTERED_MACHINE_ORIGIN',
+      confidence: 100,
+    });
+    mockReadContract.mockResolvedValueOnce(fraudLease);
+
+    const result = JSON.parse(
+      await mockReadContract({ address: DEFAULT_CONTRACT_ADDRESS, functionName: 'get_lease', args: ['lease-20'] })
+    );
+    expect(result.verdict).toBe('HARDWARE_FRAUDULENT');
+    expect(result.reason).toContain('attestation');
+    expect(result.status).toBe(7); // AUDIT_COMPLETED with FRAUDULENT
+  });
 });

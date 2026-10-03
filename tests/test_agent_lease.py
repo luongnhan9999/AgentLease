@@ -18,11 +18,6 @@ from test_agentlease import (
     test_cancel_or_reclaim_with_time_mechanism,
     test_views_and_pagination,
 )
-from test_frontend_finalize_path import (
-    test_frontend_write_contract_table_finalize_path,
-    test_frontend_write_contract_appeal_changed_to_degraded_forfeits_bond,
-    test_frontend_write_contract_rejects_unregistered_and_forged_seals,
-)
 
 __all__ = [
     "test_agentlease_lifecycle",
@@ -37,7 +32,4 @@ __all__ = [
     "test_table_finalize_settlement_transaction_path",
     "test_cancel_or_reclaim_with_time_mechanism",
     "test_views_and_pagination",
-    "test_frontend_write_contract_table_finalize_path",
-    "test_frontend_write_contract_appeal_changed_to_degraded_forfeits_bond",
-    "test_frontend_write_contract_rejects_unregistered_and_forged_seals",
 ]
