@@ -81,7 +81,9 @@ def _exec_ai_prompt(prompt: str) -> dict:
 
 
 def _run_nondet(leader_fn, validator_fn):
-    """Executes leader-validator consensus via run_nondet_unsafe (production API)."""
+    """Executes leader-validator consensus with runtime capability detection."""
+    if hasattr(gl, "vm") and hasattr(gl.vm, "run_nondet"):
+        return gl.vm.run_nondet(leader_fn, validator_fn)
     if hasattr(gl, "vm") and hasattr(gl.vm, "run_nondet_unsafe"):
         return gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
     leader_res = leader_fn()
@@ -498,17 +500,14 @@ Respond with ONLY a raw JSON object:
                 "passed_attestation": True,
             }
 
-        def validator_fn(leader_res):
-            data = leader_res.calldata if hasattr(leader_res, "calldata") else leader_res
-            if not isinstance(data, dict):
+        def validator_fn(leader_res) -> bool:
+            if hasattr(gl, "vm") and hasattr(gl.vm, "Return") and not isinstance(leader_res, gl.vm.Return):
                 return False
-            web_content = _fetch_web(clean_url)
-            passed, _, _ = _verify_telemetry_attestation(
-                web_content, l.challenge_nonce, l.session_id, host_str, self.authorized_machines
-            )
-            if not passed:
-                return data.get("verdict") == "HARDWARE_FRAUDULENT"
-            return data.get("verdict") in ["HARDWARE_VERIFIED", "HARDWARE_DEGRADED", "HARDWARE_FRAUDULENT"]
+            leader = leader_res.calldata if hasattr(leader_res, "calldata") else leader_res
+            if not isinstance(leader, dict) or "verdict" not in leader:
+                return False
+            mine = leader_fn()
+            return mine.get("verdict") == leader.get("verdict")
 
         try:
             res = _run_nondet(leader_fn, validator_fn)
@@ -571,7 +570,7 @@ Respond with ONLY a raw JSON object:
         if self.total_compute_locked >= l.escrow_amount:
             self.total_compute_locked = self.total_compute_locked - l.escrow_amount
         else:
-            self.total_compute_locked = u256(0)
+            self.total_compute_locked = bigint(0)
 
         if l.verdict == "HARDWARE_VERIFIED":
             l.status = u8(2)  # 2: SETTLED_PAID
@@ -716,22 +715,14 @@ OUTPUT FORMAT (JSON ONLY):
                 "confidence": app_c,
             }
 
-        def validator_fn(leader_res):
-            data = leader_res.calldata if hasattr(leader_res, "calldata") else leader_res
-            if not isinstance(data, dict):
+        def validator_fn(leader_res) -> bool:
+            if hasattr(gl, "vm") and hasattr(gl.vm, "Return") and not isinstance(leader_res, gl.vm.Return):
                 return False
-            appeal_evidence = _fetch_web(l.benchmark_log_url)
-            passed, _, _ = _verify_telemetry_attestation(
-                appeal_evidence, l.challenge_nonce, l.session_id, host_str, self.authorized_machines
-            )
-            if not passed:
-                return data.get("appeal_verdict") == "APPEAL_DISMISSED"
-            return data.get("appeal_verdict") in [
-                "APPEAL_UPHELD_VERIFIED",
-                "APPEAL_UPHELD_FRAUDULENT",
-                "APPEAL_UPHELD_DEGRADED",
-                "APPEAL_DISMISSED",
-            ]
+            leader = leader_res.calldata if hasattr(leader_res, "calldata") else leader_res
+            if not isinstance(leader, dict) or "appeal_verdict" not in leader:
+                return False
+            mine = leader_fn()
+            return mine.get("appeal_verdict") == leader.get("appeal_verdict")
 
         try:
             tribunal_res = _run_nondet(leader_fn, validator_fn)
@@ -752,7 +743,7 @@ OUTPUT FORMAT (JSON ONLY):
         if self.total_compute_locked >= total_release:
             self.total_compute_locked = self.total_compute_locked - total_release
         else:
-            self.total_compute_locked = u256(0)
+            self.total_compute_locked = bigint(0)
 
         # Determine winner/loser and route funds safely
         # Note: Initial verdict and initial status are PRESERVED!
@@ -852,7 +843,10 @@ OUTPUT FORMAT (JSON ONLY):
         # Case 1: Unclaimed order expired
         if l.status == u8(0) and current_time >= l.expires_at_time:
             escrow_val = int(l.escrow_amount)
-            self.total_compute_locked = self.total_compute_locked - l.escrow_amount
+            if self.total_compute_locked >= l.escrow_amount:
+                self.total_compute_locked = self.total_compute_locked - l.escrow_amount
+            else:
+                self.total_compute_locked = bigint(0)
             l.status = u8(4)  # 4: CANCELLED
             l.verdict = "CANCELLED"
             l.reason = "Lease expired unfulfilled. Escrow reclaimed by renter."
@@ -863,7 +857,10 @@ OUTPUT FORMAT (JSON ONLY):
         # Case 2: Audit stalled > 1 hour
         if l.status == u8(1) and current_time >= (l.audit_started_time + STALL_TIMEOUT_SECONDS):
             escrow_val = int(l.escrow_amount)
-            self.total_compute_locked = self.total_compute_locked - l.escrow_amount
+            if self.total_compute_locked >= l.escrow_amount:
+                self.total_compute_locked = self.total_compute_locked - l.escrow_amount
+            else:
+                self.total_compute_locked = bigint(0)
             l.status = u8(4)  # 4: CANCELLED
             l.verdict = "CANCELLED"
             l.reason = "Audit stalled past timeout. Escrow reclaimed by renter."
