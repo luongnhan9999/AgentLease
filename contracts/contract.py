@@ -18,6 +18,16 @@ def _addr_str(addr: Address) -> str:
         return str(addr)
 
 
+def _message_sender() -> Address:
+    """Safely extracts message caller address across GenVM and mock runtime contexts."""
+    if hasattr(gl, "message"):
+        if hasattr(gl.message, "sender_address"):
+            return gl.message.sender_address
+        if hasattr(gl.message, "sender"):
+            return gl.message.sender
+    raise gl.vm.UserError("Caller address unavailable from message context.")
+
+
 def _current_timestamp() -> u256:
     """
     Derives manipulation-resistant execution timestamp from consensus block context (gl.message_raw['datetime']).
@@ -281,7 +291,10 @@ class Contract(gl.Contract):
     lease_counter: u64
 
     def __init__(self):
-        self.owner = getattr(gl.message, "sender", getattr(gl.message, "sender_address", Address(ZERO_ADDRESS)))
+        try:
+            self.owner = _message_sender()
+        except Exception:
+            self.owner = Address(ZERO_ADDRESS)
         self.total_compute_locked = bigint(0)
         self.total_leases_settled = u32(0)
         self.lease_counter = u64(0)
@@ -348,7 +361,7 @@ class Contract(gl.Contract):
 
         order = LeaseOrder(
             lease_id=lease_id,
-            renter=gl.message.sender,
+            renter=_message_sender(),
             host=Address(ZERO_ADDRESS),
             dispute_initiator=Address(ZERO_ADDRESS),
             escrow_amount=escrow,
@@ -388,7 +401,7 @@ class Contract(gl.Contract):
         if current_time >= l.expires_at_time:
             raise gl.vm.UserError("Lease order has expired.")
 
-        sender = gl.message.sender
+        sender = _message_sender()
         if _addr_str(sender).lower() == _addr_str(l.renter).lower():
             raise gl.vm.UserError("Renter cannot claim their own lease order as host.")
 
@@ -406,7 +419,7 @@ class Contract(gl.Contract):
         if l.status != u8(0):
             raise gl.vm.UserError("Lease order is not open for telemetry submission.")
 
-        sender = gl.message.sender
+        sender = _message_sender()
         host_str = _addr_str(l.host)
         if host_str == ZERO_ADDRESS:
             l.host = sender
@@ -618,7 +631,7 @@ Respond with ONLY a raw JSON object:
         if current_time > (l.audit_completed_time + COOLING_OFF_SECONDS):
             raise gl.vm.UserError("Dispute window expired. Verdict is final.")
 
-        sender = gl.message.sender
+        sender = _message_sender()
         sender_str = _addr_str(sender).lower()
         renter_str = _addr_str(l.renter).lower()
         host_str = _addr_str(l.host).lower()
@@ -833,7 +846,7 @@ OUTPUT FORMAT (JSON ONLY):
             raise gl.vm.UserError("Lease order not found.")
 
         l = self.leases[lease_id]
-        sender_str = _addr_str(gl.message.sender).lower()
+        sender_str = _addr_str(_message_sender()).lower()
         renter_str = _addr_str(l.renter).lower()
         if sender_str != renter_str:
             raise gl.vm.UserError("Only the compute renter can cancel or reclaim the lease.")
