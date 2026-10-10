@@ -121,7 +121,7 @@ def _verify_telemetry_attestation(
     expected_nonce: str,
     expected_session: str,
     expected_host: str,
-    authorized_machines: TreeMap[str, MachineIdentity],
+    authorized_machines: dict[str, MachineIdentity] | TreeMap[str, MachineIdentity],
 ) -> tuple[bool, str, dict]:
     """
     Programmatically verifies machine origin authenticity, digital signature against enrolled public keys,
@@ -291,10 +291,7 @@ class Contract(gl.Contract):
     lease_counter: u64
 
     def __init__(self):
-        try:
-            self.owner = _message_sender()
-        except Exception:
-            self.owner = Address(ZERO_ADDRESS)
+        self.owner = _message_sender()
         self.total_compute_locked = bigint(0)
         self.total_leases_settled = u32(0)
         self.lease_counter = u64(0)
@@ -325,6 +322,13 @@ class Contract(gl.Contract):
             registered_at=u256(0),
         )
         self.authorized_machine_ids.append(node2_id)
+
+    def _get_machines_snapshot(self) -> dict:
+        """Returns in-memory snapshot of authorized machines to isolate storage access outside nondet blocks."""
+        snapshot = {}
+        for mid in self.authorized_machine_ids:
+            snapshot[mid] = self.authorized_machines[mid]
+        return snapshot
 
     @gl.public.view
     def get_authorized_machines_info(self) -> str:
@@ -359,11 +363,12 @@ class Contract(gl.Contract):
         challenge_nonce = f"CHALLENGE-{lease_id}-{int(current_time)}"
         session_id = f"SESS-{lease_id}-{int(current_time)}"
 
+        sender = _message_sender()
         order = LeaseOrder(
             lease_id=lease_id,
-            renter=_message_sender(),
-            host=Address(ZERO_ADDRESS),
-            dispute_initiator=Address(ZERO_ADDRESS),
+            renter=sender,
+            host=sender,
+            dispute_initiator=sender,
             escrow_amount=escrow,
             dispute_bond=bigint(0),
             hardware_spec=clean_spec,
@@ -420,11 +425,16 @@ class Contract(gl.Contract):
             raise gl.vm.UserError("Lease order is not open for telemetry submission.")
 
         sender = _message_sender()
-        host_str = _addr_str(l.host)
-        if host_str == ZERO_ADDRESS:
+        host_str = _addr_str(l.host).lower()
+        renter_str = _addr_str(l.renter).lower()
+        sender_str = _addr_str(sender).lower()
+
+        if host_str == renter_str:
+            if sender_str == renter_str:
+                raise gl.vm.UserError("Renter cannot submit proofs as host.")
             l.host = sender
-            host_str = _addr_str(sender)
-        elif host_str.lower() != _addr_str(sender).lower():
+            host_str = sender_str
+        elif host_str != sender_str:
             raise gl.vm.UserError("Only designated host can submit benchmark proofs.")
 
         clean_url = str(benchmark_log_url).strip()
@@ -451,11 +461,12 @@ class Contract(gl.Contract):
         host_str = _addr_str(l.host)
         clean_url = l.benchmark_log_url
         audit_done_time = _current_timestamp()
+        machines_snapshot = self._get_machines_snapshot()
 
         def leader_fn():
             web_content = _fetch_web(clean_url)
             passed_attestation, attestation_reason, _ = _verify_telemetry_attestation(
-                web_content, l.challenge_nonce, l.session_id, host_str, self.authorized_machines
+                web_content, l.challenge_nonce, l.session_id, host_str, machines_snapshot
             )
             if not passed_attestation:
                 return {
@@ -675,11 +686,12 @@ Respond with ONLY a raw JSON object:
         appellant = l.dispute_initiator
         appellant_str = _addr_str(appellant).lower()
         appellee = l.host if appellant_str == renter_str else l.renter
+        machines_snapshot = self._get_machines_snapshot()
 
         def leader_fn():
             appeal_evidence = _fetch_web(l.benchmark_log_url)
             passed_attestation, attestation_reason, _ = _verify_telemetry_attestation(
-                appeal_evidence, l.challenge_nonce, l.session_id, host_str, self.authorized_machines
+                appeal_evidence, l.challenge_nonce, l.session_id, host_str, machines_snapshot
             )
             if not passed_attestation:
                 return {
