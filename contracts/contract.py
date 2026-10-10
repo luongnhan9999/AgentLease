@@ -121,7 +121,7 @@ def _verify_telemetry_attestation(
     expected_nonce: str,
     expected_session: str,
     expected_host: str,
-    authorized_machines: dict[str, MachineIdentity] | TreeMap[str, MachineIdentity],
+    authorized_machines: dict,
 ) -> tuple[bool, str, dict]:
     """
     Programmatically verifies machine origin authenticity, digital signature against enrolled public keys,
