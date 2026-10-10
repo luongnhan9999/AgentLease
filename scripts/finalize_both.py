@@ -3,7 +3,7 @@ import json
 from genlayer_py import create_client, studionet, create_account
 from genlayer_py.types.transactions import TransactionStatus
 
-CONTRACT_ADDRESS = "0x9B6C9fb5756B6763645a1079409841B7e2f28796"
+CONTRACT_ADDRESS = "0x49f63B606c0a0c3Be9Eb6B541E2d48df5a0D89c9"
 caller = create_account()
 client = create_client(chain=studionet, account=caller)
 client.fund_account(caller.address, 10**18)

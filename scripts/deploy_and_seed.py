@@ -4,7 +4,7 @@ from pathlib import Path
 from genlayer_py import create_client, studionet, create_account
 from genlayer_py.types.transactions import TransactionStatus
 
-CONTRACT_ADDRESS = "0x9B6C9fb5756B6763645a1079409841B7e2f28796"
+CONTRACT_ADDRESS = "0x49f63B606c0a0c3Be9Eb6B541E2d48df5a0D89c9"
 print(f"=== SEEDING ON-CHAIN TRANSACTIONS FOR CONTRACT {CONTRACT_ADDRESS} ===")
 
 # Create distinct Renter & Host test accounts
