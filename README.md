@@ -2,7 +2,7 @@
 
 > **Track:** Agentic Economy Infrastructure / DePIN / Subjective Consensus  
 > **Target Network:** GenLayer StudioNet (Chain ID: `61999` / `0xF1EF`, RPC: `https://studio.genlayer.com/api`)  
-> **Deployed Contract Address:** [`0x49f63B606c0a0c3Be9Eb6B541E2d48df5a0D89c9`](https://explorer-studio.genlayer.com/address/0x49f63B606c0a0c3Be9Eb6B541E2d48df5a0D89c9)  
+> **Deployed Contract Address:** [`0xc53586E16c4481EF43E78f41eba66F41DC73921a`](https://explorer-studio.genlayer.com/address/0xc53586E16c4481EF43E78f41eba66F41DC73921a)  
 > **Live Production dApp:** [https://agentlease.vercel.app](https://agentlease.vercel.app)  
 > **Ecosystem:** Agent Tank Hackathon
 

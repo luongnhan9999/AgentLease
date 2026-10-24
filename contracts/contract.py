@@ -18,6 +18,36 @@ def _addr_str(addr: Address) -> str:
         return str(addr)
 
 
+def _to_address(addr) -> Address:
+    """Safely normalizes any address representation (Address, hex str, bytes) into a valid GenVM Address."""
+    if isinstance(addr, Address):
+        return addr
+    if isinstance(addr, str):
+        hex_str = addr.strip()
+        if not hex_str.startswith("0x") and not hex_str.startswith("0X"):
+            hex_str = "0x" + hex_str
+        return Address(hex_str)
+    if hasattr(addr, "as_bytes"):
+        return Address(addr.as_bytes)
+    return Address(bytes(addr))
+
+
+def _safe_transfer(to_addr, amount: int) -> bool:
+    """
+    Safely executes native GEN value transfer with strict type validation,
+    non-zero checking, and fault-tolerant message dispatch on finalization.
+    """
+    try:
+        val = int(amount)
+        if val <= 0:
+            return False
+        target_addr = _to_address(to_addr)
+        gl.get_contract_at(target_addr).emit_transfer(value=u256(val), on="finalized")
+        return True
+    except Exception:
+        return False
+
+
 def _message_sender() -> Address:
     """Safely extracts message caller address across GenVM and mock runtime contexts."""
     if hasattr(gl, "message"):
@@ -285,6 +315,7 @@ class Contract(gl.Contract):
     lease_ids: DynArray[str]
     authorized_machines: TreeMap[str, MachineIdentity]
     authorized_machine_ids: DynArray[str]
+    pending_withdrawals: TreeMap[Address, bigint]
     owner: Address
     total_compute_locked: bigint
     total_leases_settled: u32
@@ -329,6 +360,14 @@ class Contract(gl.Contract):
         for mid in self.authorized_machine_ids:
             snapshot[mid] = self.authorized_machines[mid]
         return snapshot
+
+    def _credit_pending(self, recipient: Address, amount: int) -> None:
+        """Internal accounting helper to record claimable balance for a recipient."""
+        if amount <= 0:
+            return
+        addr = _to_address(recipient)
+        curr = int(self.pending_withdrawals.get(addr, bigint(0)))
+        self.pending_withdrawals[addr] = bigint(curr + amount)
 
     @gl.public.view
     def get_authorized_machines_info(self) -> str:
@@ -601,7 +640,8 @@ Respond with ONLY a raw JSON object:
             l.reason = f"Settled: Host verified. Full escrow of {escrow_val} released to host."
             self.leases[lease_id] = l
             self.total_leases_settled = self.total_leases_settled + u32(1)
-            gl.get_contract_at(l.host).emit_transfer(value=u256(escrow_val))
+            self._credit_pending(l.host, escrow_val)
+            _safe_transfer(l.host, escrow_val)
 
         elif l.verdict == "HARDWARE_DEGRADED":
             l.status = u8(5)  # 5: SETTLED_PARTIAL
@@ -611,16 +651,19 @@ Respond with ONLY a raw JSON object:
             self.leases[lease_id] = l
             self.total_leases_settled = self.total_leases_settled + u32(1)
             if host_payout > 0:
-                gl.get_contract_at(l.host).emit_transfer(value=u256(host_payout))
+                self._credit_pending(l.host, host_payout)
+                _safe_transfer(l.host, host_payout)
             if renter_refund > 0:
-                gl.get_contract_at(l.renter).emit_transfer(value=u256(renter_refund))
+                self._credit_pending(l.renter, renter_refund)
+                _safe_transfer(l.renter, renter_refund)
 
         elif l.verdict == "HARDWARE_FRAUDULENT":
             l.status = u8(3)  # 3: FRAUD_REFUNDED
             l.reason = f"Settled: Hardware fraudulent/failed. Full escrow of {escrow_val} refunded to renter."
             self.leases[lease_id] = l
             self.total_leases_settled = self.total_leases_settled + u32(1)
-            gl.get_contract_at(l.renter).emit_transfer(value=u256(escrow_val))
+            self._credit_pending(l.renter, escrow_val)
+            _safe_transfer(l.renter, escrow_val)
 
         else:
             raise gl.vm.UserError(f"Invalid settlement verdict: {l.verdict}")
@@ -780,11 +823,14 @@ OUTPUT FORMAT (JSON ONLY):
             self.leases[lease_id] = l
             self.total_leases_settled = self.total_leases_settled + u32(1)
 
-            gl.get_contract_at(l.host).emit_transfer(value=u256(escrow_val))
+            self._credit_pending(l.host, escrow_val)
+            _safe_transfer(l.host, escrow_val)
             if appellant_won:
-                gl.get_contract_at(appellant).emit_transfer(value=u256(bond_val))
+                self._credit_pending(appellant, bond_val)
+                _safe_transfer(appellant, bond_val)
             else:
-                gl.get_contract_at(l.host).emit_transfer(value=u256(bond_val))
+                self._credit_pending(l.host, bond_val)
+                _safe_transfer(l.host, bond_val)
 
         elif app_verdict == "APPEAL_UPHELD_FRAUDULENT":
             l.verdict = "HARDWARE_FRAUDULENT"
@@ -794,11 +840,14 @@ OUTPUT FORMAT (JSON ONLY):
             self.leases[lease_id] = l
             self.total_leases_settled = self.total_leases_settled + u32(1)
 
-            gl.get_contract_at(l.renter).emit_transfer(value=u256(escrow_val))
+            self._credit_pending(l.renter, escrow_val)
+            _safe_transfer(l.renter, escrow_val)
             if appellant_won:
-                gl.get_contract_at(appellant).emit_transfer(value=u256(bond_val))
+                self._credit_pending(appellant, bond_val)
+                _safe_transfer(appellant, bond_val)
             else:
-                gl.get_contract_at(l.renter).emit_transfer(value=u256(bond_val))
+                self._credit_pending(l.renter, bond_val)
+                _safe_transfer(l.renter, bond_val)
 
         elif app_verdict == "APPEAL_UPHELD_DEGRADED":
             l.verdict = "HARDWARE_DEGRADED"
@@ -810,12 +859,15 @@ OUTPUT FORMAT (JSON ONLY):
             self.total_leases_settled = self.total_leases_settled + u32(1)
 
             if host_payout > 0:
-                gl.get_contract_at(l.host).emit_transfer(value=u256(host_payout))
+                self._credit_pending(l.host, host_payout)
+                _safe_transfer(l.host, host_payout)
             if renter_refund > 0:
-                gl.get_contract_at(l.renter).emit_transfer(value=u256(renter_refund))
+                self._credit_pending(l.renter, renter_refund)
+                _safe_transfer(l.renter, renter_refund)
 
             # Appellant appealed for full outcome but result is degraded -> bond forfeits to appellee
-            gl.get_contract_at(appellee).emit_transfer(value=u256(bond_val))
+            self._credit_pending(appellee, bond_val)
+            _safe_transfer(appellee, bond_val)
 
         else:  # APPEAL_DISMISSED: Preserved initial verdict stands, appellant loses dispute bond!
             l.reason = f"Appeal dismissed. Preserved verdict {l.initial_verdict} upheld. Bond forfeited to appellee. {app_reason}"
@@ -826,7 +878,8 @@ OUTPUT FORMAT (JSON ONLY):
                 l.status = u8(2)
                 self.leases[lease_id] = l
                 self.total_leases_settled = self.total_leases_settled + u32(1)
-                gl.get_contract_at(l.host).emit_transfer(value=u256(escrow_val))
+                self._credit_pending(l.host, escrow_val)
+                _safe_transfer(l.host, escrow_val)
             elif l.initial_verdict == "HARDWARE_DEGRADED":
                 l.verdict = "HARDWARE_DEGRADED"
                 l.status = u8(5)
@@ -835,24 +888,28 @@ OUTPUT FORMAT (JSON ONLY):
                 self.leases[lease_id] = l
                 self.total_leases_settled = self.total_leases_settled + u32(1)
                 if host_payout > 0:
-                    gl.get_contract_at(l.host).emit_transfer(value=u256(host_payout))
+                    self._credit_pending(l.host, host_payout)
+                    _safe_transfer(l.host, host_payout)
                 if renter_refund > 0:
-                    gl.get_contract_at(l.renter).emit_transfer(value=u256(renter_refund))
+                    self._credit_pending(l.renter, renter_refund)
+                    _safe_transfer(l.renter, renter_refund)
             else:  # HARDWARE_FRAUDULENT or other
                 l.verdict = "HARDWARE_FRAUDULENT"
                 l.status = u8(3)
                 self.leases[lease_id] = l
                 self.total_leases_settled = self.total_leases_settled + u32(1)
-                gl.get_contract_at(l.renter).emit_transfer(value=u256(escrow_val))
+                self._credit_pending(l.renter, escrow_val)
+                _safe_transfer(l.renter, escrow_val)
 
             # Bond forfeited to appellee
-            gl.get_contract_at(appellee).emit_transfer(value=u256(bond_val))
+            self._credit_pending(appellee, bond_val)
+            _safe_transfer(appellee, bond_val)
 
     @gl.public.write
     def cancel_or_reclaim_lease(self, lease_id: str) -> None:
         """
-        Allows renter to safely reclaim escrow if order expired unfulfilled
-        or if audit stalled past STALL_TIMEOUT_SECONDS (1 hour).
+        Allows renter to safely reclaim escrow if order expired unfulfilled,
+        if order is unclaimed, or if audit stalled past STALL_TIMEOUT_SECONDS (1 hour).
         """
         if lease_id not in self.leases:
             raise gl.vm.UserError("Lease order not found.")
@@ -865,8 +922,10 @@ OUTPUT FORMAT (JSON ONLY):
 
         current_time = _current_timestamp()
 
-        # Case 1: Unclaimed order expired
-        if l.status == u8(0) and current_time >= l.expires_at_time:
+        # Case 1: Unclaimed order or expired order
+        is_unclaimed = (l.status == u8(0) and _addr_str(l.host).lower() == renter_str)
+        is_expired = (l.status == u8(0) and current_time >= l.expires_at_time)
+        if is_unclaimed or is_expired:
             escrow_val = int(l.escrow_amount)
             if self.total_compute_locked >= l.escrow_amount:
                 self.total_compute_locked = self.total_compute_locked - l.escrow_amount
@@ -874,9 +933,10 @@ OUTPUT FORMAT (JSON ONLY):
                 self.total_compute_locked = bigint(0)
             l.status = u8(4)  # 4: CANCELLED
             l.verdict = "CANCELLED"
-            l.reason = "Lease expired unfulfilled. Escrow reclaimed by renter."
+            l.reason = "Lease cancelled / expired unfulfilled. Escrow reclaimed by renter."
             self.leases[lease_id] = l
-            gl.get_contract_at(l.renter).emit_transfer(value=u256(escrow_val))
+            self._credit_pending(l.renter, escrow_val)
+            _safe_transfer(l.renter, escrow_val)
             return
 
         # Case 2: Audit stalled > 1 hour
@@ -890,14 +950,51 @@ OUTPUT FORMAT (JSON ONLY):
             l.verdict = "CANCELLED"
             l.reason = "Audit stalled past timeout. Escrow reclaimed by renter."
             self.leases[lease_id] = l
-            gl.get_contract_at(l.renter).emit_transfer(value=u256(escrow_val))
+            self._credit_pending(l.renter, escrow_val)
+            _safe_transfer(l.renter, escrow_val)
             return
 
-        raise gl.vm.UserError("Order cannot be cancelled: lease duration has not yet expired and audit is not stalled.")
+        raise gl.vm.UserError("Order cannot be cancelled: lease has been claimed and audit is not stalled.")
 
     @gl.public.write
     def cancel_or_reclaim(self, lease_id: str) -> None:
         self.cancel_or_reclaim_lease(lease_id)
+
+    @gl.public.write
+    def withdraw(self) -> None:
+        """
+        Pull-payment method: Allows caller to withdraw all their accumulated
+        escrow refunds, SLA payouts, or dispute bond returns.
+        """
+        sender = _message_sender()
+        addr = _to_address(sender)
+        amount = int(self.pending_withdrawals.get(addr, bigint(0)))
+        if amount <= 0:
+            raise gl.vm.UserError("No pending escrow balance available to withdraw.")
+        self.pending_withdrawals[addr] = bigint(0)
+        success = _safe_transfer(addr, amount)
+        if not success:
+            self.pending_withdrawals[addr] = bigint(amount)
+            raise gl.vm.UserError("Withdrawal transfer failed to dispatch.")
+
+    @gl.public.write
+    def claim_refund(self, lease_id: str) -> None:
+        """Convenience method: triggers withdrawal for renter."""
+        self.withdraw()
+
+    @gl.public.write
+    def claim_payout(self, lease_id: str) -> None:
+        """Convenience method: triggers withdrawal for host."""
+        self.withdraw()
+
+    @gl.public.view
+    def get_pending_balance(self, user_address: str) -> str:
+        """Returns the pending withdrawable balance (in wei) for any address."""
+        try:
+            addr = _to_address(user_address)
+            return str(int(self.pending_withdrawals.get(addr, bigint(0))))
+        except Exception:
+            return "0"
 
     # ==========================
     # PUBLIC VIEW METHODS
