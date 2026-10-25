@@ -34,6 +34,7 @@ def setup_gl_mock(mock_env):
             instance.lease_ids = []
             instance.authorized_machines = {}
             instance.authorized_machine_ids = []
+            instance.pending_withdrawals = {}
             return instance
 
     mock_env.Contract = ContractStorageBase

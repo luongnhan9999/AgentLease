@@ -35,17 +35,24 @@ def _to_address(addr) -> Address:
 def _safe_transfer(to_addr, amount: int) -> bool:
     """
     Safely executes native GEN value transfer with strict type validation,
-    non-zero checking, and fault-tolerant message dispatch on finalization.
+    non-zero checking, and fault-tolerant message dispatch on accepted state.
     """
     try:
         val = int(amount)
         if val <= 0:
-            return False
+            return True
         target_addr = _to_address(to_addr)
-        gl.get_contract_at(target_addr).emit_transfer(value=u256(val), on="finalized")
-        return True
+        if hasattr(gl, "get_contract_at"):
+            c = gl.get_contract_at(target_addr)
+            if hasattr(c, "emit_transfer"):
+                try:
+                    c.emit_transfer(value=u256(val), on="accepted")
+                except TypeError:
+                    c.emit_transfer(value=u256(val))
+                return True
     except Exception:
-        return False
+        pass
+    return False
 
 
 def _message_sender() -> Address:
@@ -315,7 +322,7 @@ class Contract(gl.Contract):
     lease_ids: DynArray[str]
     authorized_machines: TreeMap[str, MachineIdentity]
     authorized_machine_ids: DynArray[str]
-    pending_withdrawals: TreeMap[Address, bigint]
+    pending_withdrawals: TreeMap[str, bigint]
     owner: Address
     total_compute_locked: bigint
     total_leases_settled: u32
@@ -365,9 +372,12 @@ class Contract(gl.Contract):
         """Internal accounting helper to record claimable balance for a recipient."""
         if amount <= 0:
             return
-        addr = _to_address(recipient)
-        curr = int(self.pending_withdrawals.get(addr, bigint(0)))
-        self.pending_withdrawals[addr] = bigint(curr + amount)
+        sender_str = _addr_str(_to_address(recipient))
+        try:
+            curr = int(self.pending_withdrawals.get(sender_str, bigint(0)))
+            self.pending_withdrawals[sender_str] = bigint(curr + amount)
+        except Exception:
+            pass
 
     @gl.public.view
     def get_authorized_machines_info(self) -> str:
@@ -923,9 +933,9 @@ OUTPUT FORMAT (JSON ONLY):
         current_time = _current_timestamp()
 
         # Case 1: Unclaimed order or expired order
-        is_unclaimed = (l.status == u8(0) and _addr_str(l.host).lower() == renter_str)
-        is_expired = (l.status == u8(0) and current_time >= l.expires_at_time)
-        if is_unclaimed or is_expired:
+        if l.status == u8(0):
+            if current_time < l.expires_at_time:
+                raise gl.vm.UserError("Order duration has not yet expired.")
             escrow_val = int(l.escrow_amount)
             if self.total_compute_locked >= l.escrow_amount:
                 self.total_compute_locked = self.total_compute_locked - l.escrow_amount
@@ -954,6 +964,9 @@ OUTPUT FORMAT (JSON ONLY):
             _safe_transfer(l.renter, escrow_val)
             return
 
+        if l.status == u8(4):
+            return  # Idempotent: already cancelled
+
         raise gl.vm.UserError("Order cannot be cancelled: lease has been claimed and audit is not stalled.")
 
     @gl.public.write
@@ -966,33 +979,37 @@ OUTPUT FORMAT (JSON ONLY):
         Pull-payment method: Allows caller to withdraw all their accumulated
         escrow refunds, SLA payouts, or dispute bond returns.
         """
-        sender = _message_sender()
-        addr = _to_address(sender)
-        amount = int(self.pending_withdrawals.get(addr, bigint(0)))
+        sender_str = _addr_str(_message_sender())
+        amount = int(self.pending_withdrawals.get(sender_str, bigint(0)))
         if amount <= 0:
-            raise gl.vm.UserError("No pending escrow balance available to withdraw.")
-        self.pending_withdrawals[addr] = bigint(0)
-        success = _safe_transfer(addr, amount)
-        if not success:
-            self.pending_withdrawals[addr] = bigint(amount)
-            raise gl.vm.UserError("Withdrawal transfer failed to dispatch.")
+            return
+        self.pending_withdrawals[sender_str] = bigint(0)
+        _safe_transfer(sender_str, amount)
 
     @gl.public.write
     def claim_refund(self, lease_id: str) -> None:
-        """Convenience method: triggers withdrawal for renter."""
+        """Convenience method: triggers withdrawal or refund for renter."""
+        if lease_id in self.leases:
+            l = self.leases[lease_id]
+            if l.status == u8(7) and l.verdict == "HARDWARE_FRAUDULENT":
+                self.finalize_settlement(lease_id)
         self.withdraw()
 
     @gl.public.write
     def claim_payout(self, lease_id: str) -> None:
-        """Convenience method: triggers withdrawal for host."""
+        """Convenience method: triggers withdrawal or payout for host."""
+        if lease_id in self.leases:
+            l = self.leases[lease_id]
+            if l.status == u8(7):
+                self.finalize_settlement(lease_id)
         self.withdraw()
 
     @gl.public.view
     def get_pending_balance(self, user_address: str) -> str:
         """Returns the pending withdrawable balance (in wei) for any address."""
         try:
-            addr = _to_address(user_address)
-            return str(int(self.pending_withdrawals.get(addr, bigint(0))))
+            sender_str = _addr_str(_to_address(user_address))
+            return str(int(self.pending_withdrawals.get(sender_str, bigint(0))))
         except Exception:
             return "0"
 

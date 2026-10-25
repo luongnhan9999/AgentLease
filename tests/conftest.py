@@ -84,7 +84,7 @@ class MockTransferContract:
         self.address = address
         self.transfers = []
 
-    def emit_transfer(self, value):
+    def emit_transfer(self, value, on="accepted"):
         self.transfers.append({"to": self.address, "value": value})
         return True
 
