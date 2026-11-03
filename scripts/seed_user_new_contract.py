@@ -4,7 +4,7 @@ import base64
 from genlayer_py import create_client, studionet, create_account
 from genlayer_py.types.transactions import TransactionStatus
 
-CONTRACT_ADDRESS = "0x0adeDc5c3B1Fc59FBB8e5aB8d55aC71fCb75B464"
+CONTRACT_ADDRESS = "0x3F22188BC30ea3ec32FCADb1dE24d8e62e67fbcf"
 print(f"=== SEEDING ON-CHAIN TRANSACTIONS FOR USER CONTRACT {CONTRACT_ADDRESS} ===")
 
 renter = create_account()
