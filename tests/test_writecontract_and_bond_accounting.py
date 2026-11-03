@@ -123,6 +123,10 @@ def test_appeal_changed_to_degraded_forfeits_bond_to_appellee(mock_gl_env):
 
     # CRITICAL CHECK: Host appealed for full outcome but outcome was only DEGRADED.
     # The bond MUST forfeit to renter (appellee), NOT to host!
+    # Under pull-payment pattern, each party calls withdraw
+    client.write_contract("withdraw", sender=host)
+    client.write_contract("withdraw", sender=renter)
+
     host_transfers = mock_gl_env.get_contract_at(host).transfers
     renter_transfers = mock_gl_env.get_contract_at(renter).transfers
 
@@ -130,9 +134,7 @@ def test_appeal_changed_to_degraded_forfeits_bond_to_appellee(mock_gl_env):
     renter_refund = escrow_amt - host_payout
 
     assert any(t["value"] == host_payout for t in host_transfers)
-    assert any(t["value"] == renter_refund for t in renter_transfers)
-    # Renter received the 1 GEN forfeited bond
-    assert any(t["value"] == bond_amt for t in renter_transfers)
+    assert any(t["value"] == renter_refund + bond_amt for t in renter_transfers)
     # Host did NOT receive the bond back
     assert not any(t["value"] == bond_amt for t in host_transfers)
 
@@ -196,6 +198,9 @@ def test_frontend_write_contract_simulation_finalize(mock_gl_env):
     assert settled["status"] == 2  # SETTLED_PAID
     assert settled["verdict"] == "HARDWARE_VERIFIED"
     assert app.total_compute_locked == 0
+
+    # Under pull payment pattern, host claims payout via withdraw
+    client.write_contract("withdraw", sender=host)
 
     host_transfers = mock_gl_env.get_contract_at(host).transfers
     assert any(t["value"] == escrow_amt for t in host_transfers)

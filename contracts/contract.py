@@ -651,7 +651,6 @@ Respond with ONLY a raw JSON object:
             self.leases[lease_id] = l
             self.total_leases_settled = self.total_leases_settled + u32(1)
             self._credit_pending(l.host, escrow_val)
-            _safe_transfer(l.host, escrow_val)
 
         elif l.verdict == "HARDWARE_DEGRADED":
             l.status = u8(5)  # 5: SETTLED_PARTIAL
@@ -662,10 +661,8 @@ Respond with ONLY a raw JSON object:
             self.total_leases_settled = self.total_leases_settled + u32(1)
             if host_payout > 0:
                 self._credit_pending(l.host, host_payout)
-                _safe_transfer(l.host, host_payout)
             if renter_refund > 0:
                 self._credit_pending(l.renter, renter_refund)
-                _safe_transfer(l.renter, renter_refund)
 
         elif l.verdict == "HARDWARE_FRAUDULENT":
             l.status = u8(3)  # 3: FRAUD_REFUNDED
@@ -673,7 +670,6 @@ Respond with ONLY a raw JSON object:
             self.leases[lease_id] = l
             self.total_leases_settled = self.total_leases_settled + u32(1)
             self._credit_pending(l.renter, escrow_val)
-            _safe_transfer(l.renter, escrow_val)
 
         else:
             raise gl.vm.UserError(f"Invalid settlement verdict: {l.verdict}")
@@ -834,13 +830,10 @@ OUTPUT FORMAT (JSON ONLY):
             self.total_leases_settled = self.total_leases_settled + u32(1)
 
             self._credit_pending(l.host, escrow_val)
-            _safe_transfer(l.host, escrow_val)
             if appellant_won:
                 self._credit_pending(appellant, bond_val)
-                _safe_transfer(appellant, bond_val)
             else:
                 self._credit_pending(l.host, bond_val)
-                _safe_transfer(l.host, bond_val)
 
         elif app_verdict == "APPEAL_UPHELD_FRAUDULENT":
             l.verdict = "HARDWARE_FRAUDULENT"
@@ -851,13 +844,10 @@ OUTPUT FORMAT (JSON ONLY):
             self.total_leases_settled = self.total_leases_settled + u32(1)
 
             self._credit_pending(l.renter, escrow_val)
-            _safe_transfer(l.renter, escrow_val)
             if appellant_won:
                 self._credit_pending(appellant, bond_val)
-                _safe_transfer(appellant, bond_val)
             else:
                 self._credit_pending(l.renter, bond_val)
-                _safe_transfer(l.renter, bond_val)
 
         elif app_verdict == "APPEAL_UPHELD_DEGRADED":
             l.verdict = "HARDWARE_DEGRADED"
@@ -870,14 +860,11 @@ OUTPUT FORMAT (JSON ONLY):
 
             if host_payout > 0:
                 self._credit_pending(l.host, host_payout)
-                _safe_transfer(l.host, host_payout)
             if renter_refund > 0:
                 self._credit_pending(l.renter, renter_refund)
-                _safe_transfer(l.renter, renter_refund)
 
             # Appellant appealed for full outcome but result is degraded -> bond forfeits to appellee
             self._credit_pending(appellee, bond_val)
-            _safe_transfer(appellee, bond_val)
 
         else:  # APPEAL_DISMISSED: Preserved initial verdict stands, appellant loses dispute bond!
             l.reason = f"Appeal dismissed. Preserved verdict {l.initial_verdict} upheld. Bond forfeited to appellee. {app_reason}"
@@ -889,7 +876,6 @@ OUTPUT FORMAT (JSON ONLY):
                 self.leases[lease_id] = l
                 self.total_leases_settled = self.total_leases_settled + u32(1)
                 self._credit_pending(l.host, escrow_val)
-                _safe_transfer(l.host, escrow_val)
             elif l.initial_verdict == "HARDWARE_DEGRADED":
                 l.verdict = "HARDWARE_DEGRADED"
                 l.status = u8(5)
@@ -899,21 +885,17 @@ OUTPUT FORMAT (JSON ONLY):
                 self.total_leases_settled = self.total_leases_settled + u32(1)
                 if host_payout > 0:
                     self._credit_pending(l.host, host_payout)
-                    _safe_transfer(l.host, host_payout)
                 if renter_refund > 0:
                     self._credit_pending(l.renter, renter_refund)
-                    _safe_transfer(l.renter, renter_refund)
             else:  # HARDWARE_FRAUDULENT or other
                 l.verdict = "HARDWARE_FRAUDULENT"
                 l.status = u8(3)
                 self.leases[lease_id] = l
                 self.total_leases_settled = self.total_leases_settled + u32(1)
                 self._credit_pending(l.renter, escrow_val)
-                _safe_transfer(l.renter, escrow_val)
 
             # Bond forfeited to appellee
             self._credit_pending(appellee, bond_val)
-            _safe_transfer(appellee, bond_val)
 
     @gl.public.write
     def cancel_or_reclaim_lease(self, lease_id: str) -> None:
@@ -946,7 +928,6 @@ OUTPUT FORMAT (JSON ONLY):
             l.reason = "Lease cancelled / expired unfulfilled. Escrow reclaimed by renter."
             self.leases[lease_id] = l
             self._credit_pending(l.renter, escrow_val)
-            _safe_transfer(l.renter, escrow_val)
             return
 
         # Case 2: Audit stalled > 1 hour
@@ -961,7 +942,6 @@ OUTPUT FORMAT (JSON ONLY):
             l.reason = "Audit stalled past timeout. Escrow reclaimed by renter."
             self.leases[lease_id] = l
             self._credit_pending(l.renter, escrow_val)
-            _safe_transfer(l.renter, escrow_val)
             return
 
         if l.status == u8(4):
@@ -978,30 +958,30 @@ OUTPUT FORMAT (JSON ONLY):
         """
         Pull-payment method: Allows caller to withdraw all their accumulated
         escrow refunds, SLA payouts, or dispute bond returns.
+        Checks-Effects-Interactions pattern: clears balance before dispatch,
+        and restores it if transfer fails so funds are never lost.
         """
         sender_str = _addr_str(_message_sender())
         amount = int(self.pending_withdrawals.get(sender_str, bigint(0)))
         if amount <= 0:
-            return
+            raise gl.vm.UserError("No pending escrow balance available to withdraw.")
+
+        # Optimistically clear balance before transfer
         self.pending_withdrawals[sender_str] = bigint(0)
-        _safe_transfer(sender_str, amount)
+        success = _safe_transfer(sender_str, amount)
+        if not success:
+            # Restore balance immediately on transfer failure
+            self.pending_withdrawals[sender_str] = bigint(amount)
+            raise gl.vm.UserError("Withdrawal transfer failed to dispatch. Pending balance preserved.")
 
     @gl.public.write
     def claim_refund(self, lease_id: str) -> None:
         """Convenience method: triggers withdrawal or refund for renter."""
-        if lease_id in self.leases:
-            l = self.leases[lease_id]
-            if l.status == u8(7) and l.verdict == "HARDWARE_FRAUDULENT":
-                self.finalize_settlement(lease_id)
         self.withdraw()
 
     @gl.public.write
     def claim_payout(self, lease_id: str) -> None:
         """Convenience method: triggers withdrawal or payout for host."""
-        if lease_id in self.leases:
-            l = self.leases[lease_id]
-            if l.status == u8(7):
-                self.finalize_settlement(lease_id)
         self.withdraw()
 
     @gl.public.view

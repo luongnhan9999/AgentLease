@@ -134,7 +134,11 @@ def test_agentlease_lifecycle(mock_gl_env):
     assert final_lease["verdict"] == "HARDWARE_VERIFIED"
     assert app.total_compute_locked == 1_000_000_000_000_000_000  # only dummy order remains
 
-    # Check Host received 100% of escrow
+    # Check Host received 100% of escrow via standard pull-payment withdraw
+    assert app.get_pending_balance(host_addr) == str(escrow_amt)
+    mock_gl_env.message.sender_address = host_addr
+    app.withdraw()
+    assert app.get_pending_balance(host_addr) == "0"
     host_transfers = mock_gl_env.get_contract_at(host_addr).transfers
     assert len(host_transfers) == 1
     assert host_transfers[0]["value"] == escrow_amt
@@ -333,9 +337,16 @@ def test_degraded_hardware_partial_payout(mock_gl_env):
     assert settled["status"] == 5  # SETTLED_PARTIAL
     assert settled["verdict"] == "HARDWARE_DEGRADED"
 
-    # Verify 60/40 Split
+    # Verify 60/40 Split in pending balances & withdraw
     expected_host = (escrow_amt * 60) // 100
     expected_renter = escrow_amt - expected_host
+    assert app.get_pending_balance(host_addr) == str(expected_host)
+    assert app.get_pending_balance(renter_addr) == str(expected_renter)
+
+    mock_gl_env.message.sender_address = host_addr
+    app.withdraw()
+    mock_gl_env.message.sender_address = renter_addr
+    app.withdraw()
 
     host_transfers = mock_gl_env.get_contract_at(host_addr).transfers
     renter_transfers = mock_gl_env.get_contract_at(renter_addr).transfers
@@ -405,20 +416,22 @@ def test_appeal_changed_to_degraded_host_loses_bond_to_renter(mock_gl_env):
     # Verify CRITICAL STEWARD REQUIREMENT:
     # Host (appellant) LOST their claim for 100% Verified.
     # Bond (1 GEN) MUST forfeit to Renter (appellee)!
+    mock_gl_env.message.sender_address = renter_addr
+    app.withdraw()
+    mock_gl_env.message.sender_address = host_addr
+    app.withdraw()
+
     renter_transfers = mock_gl_env.get_contract_at(renter_addr).transfers
     host_transfers = mock_gl_env.get_contract_at(host_addr).transfers
 
     renter_values = [t["value"] for t in renter_transfers]
     host_values = [t["value"] for t in host_transfers]
 
-    # Renter receives the 1 GEN forfeit bond!
-    assert bond_amt in renter_values
-    # Escrow 60/40 split: Host receives 6 GEN, Renter receives 4 GEN
+    # Renter receives the 1 GEN forfeit bond + 40% escrow (4 GEN) = 5 GEN total
     expected_host_escrow = (escrow_amt * 60) // 100
     expected_renter_escrow = escrow_amt - expected_host_escrow
-
-    assert expected_host_escrow in host_values
-    assert expected_renter_escrow in renter_values
+    assert renter_transfers[0]["value"] == expected_renter_escrow + bond_amt
+    assert host_transfers[0]["value"] == expected_host_escrow
 
 
 # =============================================================================
@@ -481,19 +494,22 @@ def test_appeal_changed_to_degraded_renter_loses_bond_to_host(mock_gl_env):
 
     # Verify Renter (appellant) LOST their claim of total fraud!
     # Bond (1 GEN) MUST forfeit to Host (appellee)!
+    mock_gl_env.message.sender_address = host_addr
+    app.withdraw()
+    mock_gl_env.message.sender_address = renter_addr
+    app.withdraw()
+
     host_transfers = mock_gl_env.get_contract_at(host_addr).transfers
     renter_transfers = mock_gl_env.get_contract_at(renter_addr).transfers
 
     host_values = [t["value"] for t in host_transfers]
     renter_values = [t["value"] for t in renter_transfers]
 
-    # Host received the 1 GEN forfeit bond!
-    assert bond_amt in host_values
-    # Escrow 60/40 split
+    # Host received the 1 GEN forfeit bond + 60% escrow (6 GEN) = 7 GEN total
     expected_host_escrow = (escrow_amt * 60) // 100
     expected_renter_escrow = escrow_amt - expected_host_escrow
-    assert expected_host_escrow in host_values
-    assert expected_renter_escrow in renter_values
+    assert host_transfers[0]["value"] == expected_host_escrow + bond_amt
+    assert renter_transfers[0]["value"] == expected_renter_escrow
 
 
 # =============================================================================
@@ -543,11 +559,11 @@ def test_appeal_rejected_preserves_degraded_verdict_and_routes_bond_to_host(mock
     assert final_lease["status"] == 5  # SETTLED_PARTIAL
     assert final_lease["verdict"] == "HARDWARE_DEGRADED"
 
-    # Host received bond (1 GEN) + 60% escrow (6 GEN)
+    # Host withdraws bond (1 GEN) + 60% escrow (6 GEN)
+    mock_gl_env.message.sender_address = host_addr
+    app.withdraw()
     host_transfers = mock_gl_env.get_contract_at(host_addr).transfers
-    host_values = [t["value"] for t in host_transfers]
-    assert bond_amt in host_values
-    assert ((escrow_amt * 60) // 100) in host_values
+    assert sum(t["value"] for t in host_transfers) == bond_amt + ((escrow_amt * 60) // 100)
 
 
 # =============================================================================
@@ -595,11 +611,11 @@ def test_appeal_upheld_refunds_bond_and_reverses_settlement(mock_gl_env):
     assert final_lease["status"] == 2  # SETTLED_PAID
     assert final_lease["verdict"] == "HARDWARE_VERIFIED"
 
-    # Host gets 100% of escrow + their 1 GEN bond refunded
+    # Host gets 100% of escrow + their 1 GEN bond refunded via withdraw
+    mock_gl_env.message.sender_address = host_addr
+    app.withdraw()
     host_transfers = mock_gl_env.get_contract_at(host_addr).transfers
-    host_values = [t["value"] for t in host_transfers]
-    assert escrow_amt in host_values
-    assert bond_amt in host_values
+    assert sum(t["value"] for t in host_transfers) == escrow_amt + bond_amt
 
 
 # =============================================================================
@@ -650,11 +666,11 @@ def test_renter_appeal_dismissed_preserves_verified_and_forfeits_bond(mock_gl_en
     assert final_lease["status"] == 2  # SETTLED_PAID
     assert final_lease["verdict"] == "HARDWARE_VERIFIED"
 
-    # Host received 100% escrow (10 GEN) + 1 GEN forfeit bond
+    # Host received 100% escrow (10 GEN) + 1 GEN forfeit bond via withdraw
+    mock_gl_env.message.sender_address = host_addr
+    app.withdraw()
     host_transfers = mock_gl_env.get_contract_at(host_addr).transfers
-    host_values = [t["value"] for t in host_transfers]
-    assert escrow_amt in host_values
-    assert bond_amt in host_values
+    assert sum(t["value"] for t in host_transfers) == escrow_amt + bond_amt
 
 
 # =============================================================================
@@ -710,6 +726,10 @@ def test_table_finalize_settlement_transaction_path(mock_gl_env):
     assert app.total_compute_locked == 0
     assert app.total_leases_settled == 1
 
+    assert app.get_pending_balance(host_addr) == str(escrow_amt)
+    mock_gl_env.message.sender_address = host_addr
+    app.withdraw()
+    assert app.get_pending_balance(host_addr) == "0"
     host_transfers = mock_gl_env.get_contract_at(host_addr).transfers
     assert len(host_transfers) == 1
     assert host_transfers[0]["value"] == escrow_amt
@@ -756,6 +776,10 @@ def test_cancel_or_reclaim_with_time_mechanism(mock_gl_env):
     assert cancelled_lease["verdict"] == "CANCELLED"
     assert app.total_compute_locked == 0
 
+    assert app.get_pending_balance(renter_addr) == str(escrow_amt)
+    mock_gl_env.message.sender_address = renter_addr
+    app.withdraw()
+    assert app.get_pending_balance(renter_addr) == "0"
     renter_transfers = mock_gl_env.get_contract_at(renter_addr).transfers
     assert renter_transfers[0]["value"] == escrow_amt
 
@@ -802,3 +826,108 @@ def test_views_and_pagination(mock_gl_env):
     stats = json.loads(app.get_stats())
     assert stats["total_leases"] == 3
     assert stats["total_compute_locked"] == "3000000000000000000"
+
+
+# =============================================================================
+# TEST 13: Pull-Payment Escrow - No Duplicate Payouts on Settlement
+# =============================================================================
+def test_escrow_no_duplicate_payout_on_settlement(mock_gl_env):
+    """
+    Verifies that finalize_settlement strictly credits pending_withdrawals without
+    sending immediate push payouts, preventing any duplicate transfers.
+    Also verifies calling withdraw() a second time is rejected.
+    """
+    setup_gl_mock(mock_gl_env)
+    import contract
+    contract.gl = mock_gl_env
+
+    app = contract.Contract()
+    patch_contract_with_test_keys(app)
+    renter_addr = SimulatedAddress("0x1111111111111111111111111111111111111111")
+    host_addr = SimulatedAddress("0x2222222222222222222222222222222222222222")
+
+    mock_gl_env.message.sender_address = renter_addr
+    mock_gl_env.message.value = 5_000_000_000_000_000_000
+    lid = app.create_lease_order("NVIDIA H100 80GB SXM5", 86400)
+    l_data = json.loads(app.get_lease(lid))
+
+    mock_gl_env.message.sender_address = host_addr
+    proof_url = "https://host.com/valid.log"
+    mock_gl_env.nondet.web.mock_responses[proof_url] = make_benchmark_log(
+        l_data["challenge_nonce"], l_data["session_id"], host_addr
+    )
+    app.submit_hardware_proof(lid, proof_url)
+    app.adjudicate_hardware(lid)
+
+    mock_gl_env.advance_time(305)
+
+    # Finalize settlement
+    app.finalize_settlement(lid)
+
+    # 1. Check no immediate transfer was dispatched during finalize_settlement
+    host_contract = mock_gl_env.get_contract_at(host_addr)
+    assert len(host_contract.transfers) == 0, "No immediate push payout should occur on settlement"
+
+    # 2. Check pending balance is correctly recorded
+    assert int(app.get_pending_balance(str(host_addr))) == 5_000_000_000_000_000_000
+
+    # 3. Pull payout via withdraw()
+    mock_gl_env.message.sender_address = host_addr
+    app.withdraw()
+    assert len(host_contract.transfers) == 1
+    assert host_contract.transfers[0]["value"] == 5_000_000_000_000_000_000
+    assert int(app.get_pending_balance(str(host_addr))) == 0
+
+    # 4. Attempting duplicate withdraw reverts
+    with pytest.raises(Exception, match="No pending escrow balance available to withdraw"):
+        app.withdraw()
+
+    # Transfers count remains exactly 1 (no duplicate payout)
+    assert len(host_contract.transfers) == 1
+
+
+# =============================================================================
+# TEST 14: Pull-Payment Escrow - Failed Withdrawal Restores Pending Balance
+# =============================================================================
+def test_escrow_failed_withdrawal_restores_pending_balance(mock_gl_env, monkeypatch):
+    """
+    Verifies that if transfer dispatch fails during withdraw(), the pending balance
+    is restored immediately and not lost.
+    """
+    setup_gl_mock(mock_gl_env)
+    import contract
+    contract.gl = mock_gl_env
+
+    app = contract.Contract()
+    patch_contract_with_test_keys(app)
+    renter_addr = SimulatedAddress("0x1111111111111111111111111111111111111111")
+    host_addr = SimulatedAddress("0x2222222222222222222222222222222222222222")
+
+    mock_gl_env.message.sender_address = renter_addr
+    mock_gl_env.message.value = 5_000_000_000_000_000_000
+    lid = app.create_lease_order("NVIDIA H100 80GB SXM5", 86400)
+    l_data = json.loads(app.get_lease(lid))
+
+    mock_gl_env.message.sender_address = host_addr
+    proof_url = "https://host.com/valid.log"
+    mock_gl_env.nondet.web.mock_responses[proof_url] = make_benchmark_log(
+        l_data["challenge_nonce"], l_data["session_id"], host_addr
+    )
+    app.submit_hardware_proof(lid, proof_url)
+    app.adjudicate_hardware(lid)
+    mock_gl_env.advance_time(305)
+    app.finalize_settlement(lid)
+
+    assert int(app.get_pending_balance(str(host_addr))) == 5_000_000_000_000_000_000
+
+    # Mock _safe_transfer to fail (e.g. transfer rejected or network exception)
+    monkeypatch.setattr(contract, "_safe_transfer", lambda to_addr, amt: False)
+
+    # Call withdraw - must raise UserError and restore the pending balance
+    mock_gl_env.message.sender_address = host_addr
+    with pytest.raises(Exception, match="Pending balance preserved"):
+        app.withdraw()
+
+    # Balance MUST be restored, NOT lost/cleared
+    assert int(app.get_pending_balance(str(host_addr))) == 5_000_000_000_000_000_000
+
